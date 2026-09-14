@@ -18,6 +18,7 @@ pytest
 playwright
 httpx
 python-multipart
+cryptography>=44       # vault cifrato at-rest (Fernet)
 platformdirs
 pywebview
 pypdfium2       # PARTE 2: rasterizzazione pagine PDF per OCR

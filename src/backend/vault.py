@@ -22,6 +22,21 @@ from .percorsi import percorso_vault
 
 DEFAULT_DB_PATH = str(percorso_vault())
 
+# Cifratura at-rest opzionale (vault_crypto.py).  Se cryptography non è
+# disponibile o la chiave non è recuperabile, i metodi encrypt/decrypt
+# diventano no-op — l'app non si blocca mai per la cifratura.
+try:
+    from .vault_crypto import decrypt_valore, encrypt_valore  # noqa: F401
+    _HAS_CRYPTO = True
+except ImportError:
+    _HAS_CRYPTO = False
+
+    def encrypt_valore(v: str, data_dir=None) -> str:  # type: ignore[no-redef]
+        return v
+
+    def decrypt_valore(v: str, data_dir=None) -> str:  # type: ignore[no-redef]
+        return v
+
 
 def _restringi_al_proprietario(db_path: str) -> None:
     """Rende il vault leggibile solo dall'utente che lo possiede.
@@ -47,6 +62,7 @@ CREATE TABLE IF NOT EXISTS entita (
     sessione_id   TEXT    NOT NULL,
     placeholder   TEXT    NOT NULL,
     valore_reale  TEXT    NOT NULL,
+    valore_hash   TEXT,
     tipo          TEXT    NOT NULL,
     chiave_norm   TEXT,
     created_at    TEXT    NOT NULL
@@ -86,6 +102,8 @@ CREATE INDEX IF NOT EXISTS idx_rub_tipo
 _SCHEMA_INDICI_MIGRATI = """
 CREATE INDEX IF NOT EXISTS idx_ent_chiave
     ON entita (sessione_id, tipo, chiave_norm);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ent_valore_hash
+    ON entita (sessione_id, valore_hash);
 """
 
 
@@ -123,6 +141,16 @@ class Vault:
             cols = [r[1] for r in self._conn.execute("PRAGMA table_info(entita)")]
             if "chiave_norm" not in cols:
                 self._conn.execute("ALTER TABLE entita ADD COLUMN chiave_norm TEXT")
+            if "valore_hash" not in cols:
+                self._conn.execute("ALTER TABLE entita ADD COLUMN valore_hash TEXT")
+                # Backfill hash per le righe legacy (valore in chiaro).
+                try:
+                    import hashlib
+                    for row in self._conn.execute("SELECT id, valore_reale FROM entita WHERE valore_hash IS NULL"):
+                        h = hashlib.sha256(row[1].encode("utf-8")).hexdigest()
+                        self._conn.execute("UPDATE entita SET valore_hash=? WHERE id=?", (h, row[0]))
+                except Exception:
+                    pass
         except sqlite3.Error:
             pass
         self._conn.executescript(_SCHEMA_INDICI_MIGRATI)
@@ -186,12 +214,12 @@ class Vault:
             (sessione_id,),
         )
         for raw in cur.fetchall():
-            # La cache batch contiene SEMPRE dict (le righe aggiunte da
-            # ``add`` sono dict): normalizzo anche le righe da SQLite,
-            # altrimenti ``row.get(...)`` esplode su sqlite3.Row (bug
-            # reale trovato dalla G1 rafforzata su documenti lunghi).
             row = dict(raw)
-            vr = row["valore_reale"]
+            # Decifra valore_reale se cifrato (migrazione trasparente).
+            vr_enc = row["valore_reale"]
+            vr = decrypt_valore(vr_enc) if _HAS_CRYPTO else vr_enc
+            if vr != vr_enc:
+                row["valore_reale"] = vr
             ph = row["placeholder"]
             tp = row["tipo"]
             self._cache_by_valore[(sessione_id, vr)] = row
@@ -209,12 +237,23 @@ class Vault:
             return
         self._conn.execute("BEGIN")
         try:
-            self._conn.executemany(
-                "INSERT OR IGNORE INTO entita "
-                "(sessione_id, placeholder, valore_reale, tipo, chiave_norm, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                self._pending,
-            )
+            # _pending contiene già valore_reale cifrato + valore_hash
+            # se _HAS_CRYPTO, altrimenti plaintext senza hash.
+            has_hash = self._pending and len(self._pending[0]) == 7
+            if has_hash:
+                self._conn.executemany(
+                    "INSERT OR IGNORE INTO entita "
+                    "(sessione_id, placeholder, valore_reale, valore_hash, tipo, chiave_norm, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    self._pending,
+                )
+            else:
+                self._conn.executemany(
+                    "INSERT OR IGNORE INTO entita "
+                    "(sessione_id, placeholder, valore_reale, tipo, chiave_norm, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    self._pending,
+                )
             self._conn.execute("COMMIT")
         except Exception:
             self._conn.execute("ROLLBACK")
@@ -230,12 +269,40 @@ class Vault:
     ) -> sqlite3.Row | None:
         if self._batch_mode:
             return self._cache_by_valore.get((sessione_id, valore_reale))
+        # Lookup via hash deterministico (Fernet è non-deterministico,
+        # quindi non possiamo cercare per valore_reale cifrato).
+        if _HAS_CRYPTO:
+            import hashlib
+            h = hashlib.sha256(valore_reale.encode("utf-8")).hexdigest()
+            with self._lock:
+                cur = self._conn.execute(
+                    "SELECT * FROM entita WHERE sessione_id=? AND valore_hash=?",
+                    (sessione_id, h),
+                )
+                row = cur.fetchone()
+                if row is not None:
+                    return self._decrypt_row(row)
+                # Fallback legacy: righe senza hash (pre-migrazione)
+                cur = self._conn.execute(
+                    "SELECT * FROM entita WHERE sessione_id=? AND valore_reale=?",
+                    (sessione_id, valore_reale),
+                )
+                row = cur.fetchone()
+                if row is not None:
+                    return row
+                return None
         with self._lock:
             cur = self._conn.execute(
                 "SELECT * FROM entita WHERE sessione_id=? AND valore_reale=?",
                 (sessione_id, valore_reale),
             )
             return cur.fetchone()
+
+    def _decrypt_row(self, row: sqlite3.Row) -> dict:
+        """Decifra valore_reale di una riga SQLite e ritorna un dict."""
+        d = dict(row)
+        d["valore_reale"] = decrypt_valore(d["valore_reale"])
+        return d
 
     def get_by_placeholder(
         self, sessione_id: str, placeholder: str
@@ -247,7 +314,12 @@ class Vault:
                 "SELECT * FROM entita WHERE sessione_id=? AND placeholder=?",
                 (sessione_id, placeholder),
             )
-            return cur.fetchone()
+            row = cur.fetchone()
+            if row is None:
+                return None
+            if _HAS_CRYPTO:
+                return self._decrypt_row(row)
+            return row
 
     def next_index(self, sessione_id: str, tipo: str) -> int:
         """Restituisce il prossimo numero progressivo per un dato tipo."""
@@ -272,31 +344,51 @@ class Vault:
         chiave_norm: str | None = None,
     ) -> None:
         now = datetime.now(UTC).isoformat()
+        # Cifra valore_reale per la persistenza; la cache resta in chiaro
+        # per le lookup veloci (chiave = plaintext).
+        if _HAS_CRYPTO:
+            import hashlib
+            valore_enc = encrypt_valore(valore_reale)
+            valore_hash = hashlib.sha256(valore_reale.encode("utf-8")).hexdigest()
+        else:
+            valore_enc = valore_reale
+            valore_hash = None
         if self._batch_mode:
-            # dict con le stesse chiavi di sqlite3.Row per compatibilità.
             row: dict = {
                 "sessione_id": sessione_id,
                 "placeholder": placeholder,
                 "valore_reale": valore_reale,
+                "valore_hash": valore_hash,
                 "tipo": tipo,
                 "chiave_norm": chiave_norm,
                 "created_at": now,
             }
             self._cache_by_valore[(sessione_id, valore_reale)] = row
             self._cache_by_placeholder[(sessione_id, placeholder)] = row
-            self._pending.append(
-                (sessione_id, placeholder, valore_reale, tipo, chiave_norm, now)
-            )
+            if _HAS_CRYPTO:
+                self._pending.append(
+                    (sessione_id, placeholder, valore_enc, valore_hash, tipo, chiave_norm, now)
+                )
+            else:
+                self._pending.append(
+                    (sessione_id, placeholder, valore_enc, tipo, chiave_norm, now)
+                )
             return
         with self._lock:
-            # INSERT OR IGNORE: se la coppia (sessione, valore_reale)
-            # esiste già, non duplichiamo (evita crash su re-emission).
-            self._conn.execute(
-                "INSERT OR IGNORE INTO entita "
-                "(sessione_id, placeholder, valore_reale, tipo, chiave_norm, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (sessione_id, placeholder, valore_reale, tipo, chiave_norm, now),
-            )
+            if _HAS_CRYPTO:
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO entita "
+                    "(sessione_id, placeholder, valore_reale, valore_hash, tipo, chiave_norm, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (sessione_id, placeholder, valore_enc, valore_hash, tipo, chiave_norm, now),
+                )
+            else:
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO entita "
+                    "(sessione_id, placeholder, valore_reale, tipo, chiave_norm, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (sessione_id, placeholder, valore_reale, tipo, chiave_norm, now),
+                )
 
     def all_for_session(self, sessione_id: str) -> Iterable[sqlite3.Row]:
         if self._batch_mode:
@@ -306,7 +398,10 @@ class Vault:
                 "SELECT * FROM entita WHERE sessione_id=? ORDER BY id ASC",
                 (sessione_id,),
             )
-            return cur.fetchall()
+            rows = cur.fetchall()
+            if _HAS_CRYPTO:
+                return [self._decrypt_row(r) for r in rows]
+            return rows
 
     def all_sessions(self) -> list[sqlite3.Row]:
         sql = (

@@ -1284,3 +1284,29 @@ implementazioni sarebbero divergiate.
 valore, aggiunta o cancellazione — deve passare da `applicaModifica`.
 Non ricostruire il testo lato client se il server sa già farlo dal
 testo originale.
+
+## Vault cifrato at-rest con Fernet + hash deterministico (2026-09-14)
+
+**Decisione.** `valore_reale` è cifrato su disco con Fernet (AES-128-CBC + HMAC-SHA256, `cryptography>=44`). Chiave 32 byte nel Portachiavi di sistema (macOS `security` CLI, service `com.andreasforna.privacybridge`) con fallback su file `.vault.key` a 0600 nella cartella dati. Formato su disco `enc:v1:<token>`, colonna `valore_hash` (SHA-256 hex) per le lookup deterministiche (Fernet è non-deterministico).
+
+**Perché.** Segnalazione esterna: il vault conteneva PII in chiaro con permesso 0600 — su disco rubato o backup non cifrato leggibile con `sqlite3`. 0600 protegge da altri utenti locali, non da furto del disco. Fernet cifra solo la colonna sensibile (puro Python, già transitiva), senza SQLCipher né estensioni native, e mantiene compatibilità con vault esistenti: righe legacy in chiaro restano leggibili e vengono lette via fallback `valore_reale=?` se `valore_hash` non matcha.
+
+**Come funziona.**
+- `src/backend/vault_crypto.py`: gestione chiave (Keychain → file 0600 → genera), `encrypt_valore`/`decrypt_valore`/`is_encrypted`/`vault_is_encrypted`, cache Fernet. Se `cryptography` manca o la chiave non è recuperabile, no-op con warning — l'app non si blocca mai per la cifratura.
+- `src/backend/vault.py`: `add` cifra e scrive `valore_hash`, `get_by_valore` cerca per hash poi fallback plaintext, `get_by_placeholder`/`all_for_session`/`preload_session` decifrano al ritorno, `flush` gestisce pendings cifrati. Migrazione schema: `ALTER TABLE entita ADD COLUMN valore_hash TEXT` + backfill SHA-256 + `CREATE UNIQUE INDEX idx_ent_valore_hash`. Rubrica non cifrata (termini di ricerca, non PII da ripristinare).
+- `src/api/main.py` `/health` espone `vault_cifrato`.
+- `requirements.txt` rende `cryptography>=44` esplicita.
+
+**Verifica.** `anonimizza` → `SELECT valore_reale` deve dare `enc:v1:…`, `deanonimizza` deve ripristinare byte-identico, `all_for_session`/`get_by_valore` devono tornare plaintext, `batch_mode` (testi >5000 char) deve cifrare nel `flush`, legacy in chiaro deve restare leggibile. Testato con roundtrip, batch_mode, legacy fallback.
+
+## Modularizzazione motore: `motore_categorie.py` estratto (2026-09-14)
+
+**Decisione.** Estratto `src/backend/motore_categorie.py` con delimitatori placeholder (`_PH_*`), soglie, `_TYPE_MAP`/`TIPI_ENTITA`, categorie opt-in, `_TYPE_PRIORITY`/`_PERSON_TYPES`, rilevamento lingua (`_IT_HINT`/`_IT_ACCENTS`/`_lingua`), persistenza categorie. `src/backend/motore.py` re-esporta tutto (`from .motore_categorie import …`) così l'API pubblica resta identica — nessun import esterno cambia.
+
+**Perché.** Segnalazione esterna: `motore.py` 2289 righe, difficile da mantenere. Estrarre le costanti/categorie/lingua (nessuna dipendenza dalla pipeline) riduce il file principale senza rischio; ulteriori estrazioni (`motore_persona.py`, `motore_span.py` già prototipati ma orfani) vanno fatte solo atomicamente con test dedicato, altrimenti duplicazione diverge.
+
+**Cosa non fatto.** `motore_persona.py`/`motore_span.py` prototipati e rimossi: contenevano duplicati non wirati. Estrarli richiede riscrittura import in `motore.py` e verifica di `test_motore`/`test_tassonomia`/`test_garanzie` — rimandato a sessione dedicata con diff atomico.
+
+## Diagnostica modello: `stato_modello()` + `/health` (2026-09-14)
+
+**Decisione.** Aggiunto `backend.motore_neurale.stato_modello()` → `{model_id, revision, sorgente, disponibile, dettaglio}` (bundle / cache HF / download) e incluso in `GET /health` come `modello` e `vault_cifrato`. Documentato il fallback: senza neurale l'app resta funzionante (CF/PIVA/IBAN/email/telefono + dizionario nomi/cognomi); degrada solo NER isolato/luoghi generici. Revision pin resta (`_MODEL_REVISION = a7f1160d…`), bundle già contiene modello per utenti installati.

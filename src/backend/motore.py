@@ -16,142 +16,32 @@ import re
 import threading
 
 from . import avanzamento
+from .motore_categorie import (  # noqa: F401 — re-export per compatibilità esterna
+    _BATCH_THRESHOLD,
+    _MAX_BLOCK,
+    _PERSON_TYPES,
+    _PH_CLOSE,
+    _PH_OPEN,
+    _PH_REGEX,
+    _SOGLIA_ACCETTAZIONE,
+    _SOGLIA_PERSONA_CERTA,
+    _TIPI_SOLO_SUGGERITI,
+    _TIPO_SUGGERIMENTO,
+    _TYPE_MAP,
+    _TYPE_PRIORITY,
+    _leggi_categorie_attive,
+    _lingua,
+    _tipo_di,
+    CATEGORIE_DEFAULT_ATTIVE,
+    CATEGORIE_TUTTE,
+    TIPI_ENTITA,
+    scrivi_categorie_attive,
+)
 from .risoluzione import chiave_di, correlato_a
 from .truecasing import prevalentemente_minuscolo, ricapitalizza
 from .vault import DEFAULT_DB_PATH, Vault
 
 logger = logging.getLogger("privacybridge.motore")
-
-
-# Delimitatori placeholder.
-_PH_OPEN = "«"   # «
-_PH_CLOSE = "»"  # »
-_PH_REGEX = re.compile(
-    rf"{_PH_OPEN}([A-Z][A-Z_]*_\d+){_PH_CLOSE}"
-)
-
-# Dimensione del blocco di analisi. Scelta misurata, non arrotondata: su
-# 100.000 caratteri sintetici 100k → 54.2s, 50k → 47.5s, 25k → 40.3s,
-# 10k → 46.9s. La discesa è la deduplica di presidio, che confronta ogni
-# risultato con ogni altro (47 milioni di confronti su un blocco da 100k);
-# la risalita sotto i 25k è il costo fisso della pipeline spaCy, pagato a
-# ogni blocco. Il minimo sta in mezzo.
-#
-# Il blocco è anche la grana dell'avanzamento mostrato e il passo con cui
-# si può annullare: a 100k il primo aggiornamento arrivava dopo 54s.
-#
-# Verificato che sui sette documenti reali dell'utente entità e
-# suggerimenti restano identici carattere per carattere fra 100k e 25k.
-_MAX_BLOCK = 25_000
-
-# Soglia per abilitare batch_mode sul vault.
-_BATCH_THRESHOLD = 5_000
-
-# Sotto questo punteggio l'entità non viene sostituita. Il valore separa
-# i tre livelli del dizionario nomi: livello 1 (0.8) e livello 2 (0.7 /
-# 0.85) passano, livello 3 (0.35) resta sotto e affiora nella UI come
-# suggerimento da spuntare a mano. Spostarlo cambia il compromesso fra
-# nomi persi e falsi positivi — è la manopola principale del motore.
-_SOGLIA_ACCETTAZIONE = 0.4
-
-# Un IT_NOME_COGNOME a questo punteggio o sopra viene dal dizionario con
-# nome noto non ambiguo: abbastanza affidabile da far vincere "persona"
-# sulle interpretazioni concorrenti (LOCATION, GPE) sullo stesso span.
-_SOGLIA_PERSONA_CERTA = 0.7
-
-# Mappa dai tipi di entità restituiti dai recognizer al nome usato nel
-# placeholder. Volutamente collassiamo alcune categorie affini per limitare
-# l'esplosione di prefissi differenti.
-_TYPE_MAP: dict[str, str] = {
-    "PERSON": "PERSONA",
-    "IT_NOME_COGNOME": "PERSONA",
-    "IT_NOME_SUGGERITO": "PERSONA_SUGGERITO",
-    "EMAIL_ADDRESS": "EMAIL",
-    "PHONE_NUMBER": "TELEFONO",
-    "IT_TELEFONO": "TELEFONO",
-    "CREDIT_CARD": "CARTA",
-    "IBAN_CODE": "IBAN",
-    "IT_IBAN": "IBAN",
-    "IT_CODICE_FISCALE": "CF",
-    "IT_FISCAL_CODE": "CF",              # recognizer standard Presidio
-    "IT_PARTITA_IVA": "PIVA",
-    "IT_VAT_CODE": "PIVA",               # recognizer standard Presidio
-    "IT_DRIVER_LICENSE": "DOCUMENTO",
-    "IT_PASSPORT": "DOCUMENTO",
-    "IT_IDENTITY_CARD": "DOCUMENTO",
-    "IT_CAP": "CAP",
-    "IT_INDIRIZZO": "INDIRIZZO",
-    "IT_DATA_NASCITA": "DATA_NASCITA",
-    "IT_LUOGO_NASCITA": "LUOGO_NASCITA",
-    "LOCATION": "LUOGO",
-    "GPE": "LUOGO",
-    "ORGANIZATION": "ORG",
-    "IT_ORGANIZZAZIONE": "ORG",
-    "DATE_TIME": "DATA",
-    "MEDICAL_LICENSE": "SANITARIO",
-    "URL": "URL",
-    "IP_ADDRESS": "IP",
-    # Categorie aggiunte da rizzo-pii-0.3B (motore neurale nuovo).
-    "IT_TARGA": "TARGA",
-    "IT_IMPORTO": "IMPORTO",
-    "IT_CATASTO": "CATASTO",
-    "IT_DOCUMENTO": "DOCUMENTO",
-    "IT_NUMERO_SPEDIZIONE": "SPEDIZIONE",
-    # Tassonomia PII completa (copertura sistematica).
-    "IT_VIN": "VIN",
-    "IT_PRATICA": "PRATICA",
-    "IT_SOCIAL": "SOCIAL",
-    "MAC_ADDRESS": "MAC",
-    "CRYPTO": "CRYPTO",
-}
-
-# Tipi selezionabili dall'utente nella tabella entità.
-TIPI_ENTITA: list[str] = sorted(set(_TYPE_MAP.values()))
-
-
-# ---------------------------------------------------------------------------
-# Categorie opt-in — cosa viene anonimizzato per difetto (FASE 2 follow-up)
-# ---------------------------------------------------------------------------
-#
-# Motivo: su un white paper tecnico dell'utente il motore ha fatto 60+
-# sostituzioni di cui UNA sola era un dato personale. Le categorie
-# "rumorose" (LUOGO, ORG, DATA, IMPORTO, URL, IP, ecc.) sono anche le
-# meno identificative: le teniamo spente per difetto e l'utente le
-# accende quando servono, documento per documento.
-
-# Attive per difetto: sono dati personali diretti o quasi-identificatori
-# stretti.
-CATEGORIE_DEFAULT_ATTIVE: set[str] = {
-    "PERSONA",
-    "EMAIL",
-    "TELEFONO",
-    "IBAN",
-    "CF",
-    "PIVA",
-    "CARTA",
-    "CAP",
-    "INDIRIZZO",
-    "SANITARIO",
-    "DOCUMENTO",
-    "DATA_NASCITA",   # data di nascita è dato personale, attiva per default
-    "LUOGO_NASCITA",  # comune di nascita/residenza — dato anagrafico
-    # Tassonomia PII (2026-07-31): identificatori deterministici a basso
-    # rischio FP. TARGA/VIN identificano il veicolo (e da lì il
-    # proprietario via PRA); PRATICA/SOCIAL sono identificativi diretti.
-    "TARGA",
-    "VIN",
-    "PRATICA",
-    "SOCIAL",
-}
-
-# Tutte le categorie note (deve coincidere con TIPI_ENTITA + "PERSONA_SUGGERITO").
-CATEGORIE_TUTTE: set[str] = set(TIPI_ENTITA) | {"PERSONA_SUGGERITO"}
-
-
-# Se un match arriva con un entity_type sconosciuto, uso il nome originale
-# maiuscolizzato come tipo.
-def _tipo_di(entity_type: str) -> str:
-    return _TYPE_MAP.get(entity_type, entity_type.upper())
 
 
 # Particelle nobiliari / connettori italiani ammessi nei nomi propri.
@@ -347,76 +237,8 @@ def _ruolo_o_ufficio(value: str) -> bool:
     return False
 
 
-# Tipi PERSON del NER neurale/spaCy — sui quali applichiamo il filtro
-# ``_persona_valida`` (2-4 token, iniziali maiuscole). Il recognizer
-# ``IT_NOME_COGNOME`` NON è qui: viene dal dizionario nomi ed è già
-# affidabile a livello di singola parola.
-_PERSON_TYPES = {"PERSON", "PERSONA"}
-
-
-# Tipi che non vengono mai sostituiti: escono come proposta nel riquadro
-# "Possibili entità", con placeholder vuoto, e vanno spuntati a mano.
-# ``IT_CARTA_SOSPETTA`` sta qui perché è un numero che ha la forma di una
-# carta e fallisce Luhn: proporlo è sicuro, sostituirlo d'ufficio no.
-_TIPI_SOLO_SUGGERITI = {"IT_NOME_SUGGERITO", "IT_CARTA_SOSPETTA"}
-
-# Tipo mostrato in tabella per ogni span solo-suggerito. Deve essere una
-# categoria vera: questi tipi non stanno in ``_TYPE_MAP`` apposta, perché
-# lì diventerebbero categorie a sé e comparirebbero fra quelle che
-# l'utente può accendere e spegnere.
-_TIPO_SUGGERIMENTO = {"IT_NOME_SUGGERITO": "PERSONA", "IT_CARTA_SOSPETTA": "CARTA"}
-
-
-# Precedenza in caso di sovrapposizione di span diversi (più alto = vince).
-_TYPE_PRIORITY: dict[str, int] = {
-    "CF": 10,
-    "PIVA": 9,
-    "IBAN": 9,
-    "CARTA": 8,
-    "EMAIL": 8,
-    "TELEFONO": 7,
-    "PERSONA": 6,
-    # Sopra PERSONA: negli odonimi ("Corso Vittorio Emanuele 118") il modello
-    # neurale marca il nome della via come persona e spezzerebbe l'indirizzo.
-    "LUOGO": 7,
-    # INDIRIZZO sopra PERSONA e LUOGO: il recognizer deterministico
-    # (odonimo+toponimo+civico) deve vincere sugli span neurali che
-    # coprono le stesse parole — con LUOGO disattivo (default) era
-    # PERSON a spezzare l'indirizzo.
-    "INDIRIZZO": 8,
-    "ORG": 4,
-    # Sopra PERSONA e LUOGO, ma solo per il recognizer deterministico: la
-    # chiave è l'``entity_type`` grezzo, non il tipo mappato, quindi gli
-    # span neurali ORG restano a 4. Senza questo, "Studio Rosa & Associati"
-    # perde contro lo span PERSONA "Rosa" e "Comune di Cesenatico" contro
-    # il LUOGO "Cesenatico" — le due classi di errore misurate in
-    # AUDIT_PRECISIONE.md § 6.1.
-    "IT_ORGANIZZAZIONE": 8,
-    # Il recognizer regex delle date è deterministico: deve vincere sugli span
-    # più larghi e sfocati che i modelli neurali producono attorno alle cifre.
-    "DATA": 9,
-    # DATA_NASCITA ha priorità sopra DATA perché ha contesto ("nato il")
-    # che la rende un dato personale specifico.
-    "DATA_NASCITA": 10,
-    # LUOGO_NASCITA idem: batte LUOGO generico.
-    "LUOGO_NASCITA": 10,
-    "CAP": 2,
-    "URL": 8,
-    "IP": 8,
-    # Entità nuove (rizzo-pii): solo modello neurale le riconosce, quindi
-    # priorità intermedia.
-    "TARGA": 8,
-    "IMPORTO": 5,
-    "CATASTO": 8,
-    "DOCUMENTO": 6,
-    "SPEDIZIONE": 6,
-    # Deterministici keyword-gated: devono vincere sugli span sfocati
-    # del neurale che coprono le stesse cifre.
-    "VIN": 8,
-    "PRATICA": 8,
-    "SOCIAL": 8,
-    "MAC": 8,
-}
+# _PERSON_TYPES, _TIPI_SOLO_SUGGERITI, _TIPO_SUGGERIMENTO,
+# _TYPE_PRIORITY → motore_categorie.py (re-export sopra).
 
 
 # ---------------------------------------------------------------------------
@@ -460,72 +282,7 @@ def reset_analyzer() -> None:
         _analyzer = None
 
 
-# ---------------------------------------------------------------------------
-# Utility di rilevamento lingua semplice (spaCy fa già la sua parte, ma
-# forniamo un fallback grezzo per scegliere il modello iniziale).
-# ---------------------------------------------------------------------------
-
-# Segnali "italiano quasi certo": parole funzionali molto frequenti +
-# diacritici tipici. Se ne trovo anche uno, la lingua è it.
-_IT_HINT = re.compile(
-    r"\b("
-    # articoli, preposizioni, congiunzioni
-    r"il|lo|la|gli|le|un|una|uno|"
-    r"di|da|del|della|dello|degli|delle|dei|dal|dalla|"
-    r"in|su|sul|sulla|con|per|tra|fra|"
-    r"e|ed|o|od|che|non|ma|se|come|"
-    # verbi di uso comunissimo (essere/avere/stare, coniug. frequenti)
-    r"è|sono|siamo|siete|sei|era|erano|essere|"
-    r"ha|hanno|abbiamo|avete|hai|aveva|avere|"
-    r"sta|stanno|stiamo|stai|stava|stare|"
-    r"fa|fanno|fatto|fare|"
-    # verbi tipici degli scambi professionali italiani
-    r"informiamo|confermiamo|comunichiamo|preghiamo|invitiamo|"
-    r"prega|invita|conferma|informa|riscontro|allega|"
-    # sostantivi anagrafico-commerciali frequenti
-    r"signor|signora|signorina|sig|sig\.ra|dott|dott\.ssa|"
-    r"nome|cognome|telefono|cellulare|email|posta|indirizzo|"
-    r"via|corso|piazza|viale|largo|vicolo|"
-    r"cliente|fornitore|societa|società|studio|azienda|ufficio|"
-    r"fattura|contratto|preventivo|documento|colloquio|conferma|"
-    r"cortese|gentile|distinti|cordiali|saluti"
-    r")\b",
-    re.IGNORECASE,
-)
-
-# Diacritici italiani: à è é ì ò ù (e le maiuscole). In un testo di
-# lunghezza sensata, la sola presenza di un accento italiano è un segnale
-# molto affidabile: le stringhe che li contengono in inglese sono rare
-# (loanword) e il router che sceglie ``it`` non fa danno anche in quel
-# caso, mentre il contrario (testo con diacritici, routing su ``en``)
-# manda il modello inglese su un input non suo.
-_IT_ACCENTS = re.compile(r"[àèéìíòóùúÀÈÉÌÍÒÓÙÚ]")
-
-
-def _lingua(text: str) -> str:
-    """Rileva se ``text`` è italiano o inglese.
-
-    Regole (in ordine di priorità):
-     1. Se contiene diacritici italiani → ``it``.
-     2. Se contiene una parola funzionale italiana → ``it``.
-     3. Altrimenti default = ``it``. L'app è progettata per un pubblico
-        italiano e la maggior parte dei documenti trattati lo è. Chi ha
-        un testo inglese passa ``lingua="en"`` esplicito dall'UI: è
-        preferibile alla scelta euristica sbagliata, che sul testo
-        italiano rompe il rilevamento delle entità.
-    """
-    if _IT_ACCENTS.search(text):
-        return "it"
-    if _IT_HINT.search(text):
-        return "it"
-    # Segnale forte di inglese: parole funzionali inglesi frequenti.
-    if re.search(
-        r"\b(the|and|of|to|is|are|was|were|for|with|from|by|this|that|"
-        r"have|has|had|will|would|shall|should|please|dear|regards)\b",
-        text, re.IGNORECASE,
-    ):
-        return "en"
-    return "it"
+# _IT_HINT, _IT_ACCENTS, _lingua → motore_categorie.py (re-export sopra).
 
 
 # ---------------------------------------------------------------------------
@@ -1503,26 +1260,8 @@ def _analizza_a_blocchi(analyzer, testo: str, lang: str) -> list:
 # API PUBBLICA
 # ---------------------------------------------------------------------------
 
-def _leggi_categorie_attive() -> set[str]:
-    """Categorie attive dalle impostazioni persistenti.  Se non presenti,
-    ritorna il default (CATEGORIE_DEFAULT_ATTIVE).
-    """
-    # Import locale: ``aggiornamenti`` tira dentro ``urllib.request``, e
-    # l'avvio a freddo paga ogni import fatto in cima a questo modulo.
-    from .aggiornamenti import _leggi_impostazioni
-
-    cat = _leggi_impostazioni().get("categorie_attive")
-    if isinstance(cat, list):
-        return {c.upper() for c in cat if isinstance(c, str)}
-    return set(CATEGORIE_DEFAULT_ATTIVE)
-
-
-def scrivi_categorie_attive(categorie: set[str]) -> None:
-    """Persiste l'elenco di categorie attive."""
-    from .aggiornamenti import _leggi_impostazioni, _scrivi_impostazioni
-    dati = _leggi_impostazioni()
-    dati["categorie_attive"] = sorted({c.upper() for c in categorie})
-    _scrivi_impostazioni(dati)
+# _leggi_categorie_attive / scrivi_categorie_attive → motore_categorie.py
+# (re-export sopra, l'API pubblica di motore.py resta identica).
 
 
 def anonimizza(

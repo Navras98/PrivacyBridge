@@ -255,6 +255,53 @@ def _percorso_modello_locale() -> str | None:
     return None
 
 
+def stato_modello() -> dict:
+    """Ritorna lo stato del modello neurale senza caricarlo.
+
+    Utile per diagnostica e per l'endpoint /health: dice dove si trova
+    il modello, se è disponibile e quale revisione è attesa.
+    """
+    import os as _os
+
+    info: dict = {
+        "model_id": _MODEL_ID,
+        "revision": _MODEL_REVISION,
+        "sorgente": None,
+        "disponibile": False,
+        "dettaglio": "",
+    }
+    locale = _percorso_modello_locale()
+    if locale:
+        info["sorgente"] = "bundle"
+        info["disponibile"] = True
+        info["dettaglio"] = locale
+        return info
+    # Cache HuggingFace
+    try:
+        from huggingface_hub import try_to_load_from_cache  # type: ignore
+        cached = try_to_load_from_cache(_MODEL_ID, "config.json", revision=_MODEL_REVISION)
+        if cached is not None:
+            info["sorgente"] = "cache"
+            info["disponibile"] = True
+            info["dettaglio"] = str(cached)
+            return info
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    # Fallback: controlla se la cartella cache esiste
+    cache_dir = _os.path.expanduser("~/.cache/huggingface/hub")
+    safe_id = _MODEL_ID.replace("/", "--")
+    if _os.path.isdir(_os.path.join(cache_dir, f"models--{safe_id}")):
+        info["sorgente"] = "cache"
+        info["disponibile"] = True
+        info["dettaglio"] = "cache HF presente (revisione non verificata)"
+        return info
+    info["sorgente"] = "download"
+    info["dettaglio"] = "richiederà download al primo avvio (~1.1 GB)"
+    return info
+
+
 def build_neural_recognizer(
     model_id: str = _MODEL_ID,
     revision: str = _MODEL_REVISION,
@@ -267,6 +314,11 @@ def build_neural_recognizer(
     presenti (caso app distribuita con modello nel bundle), la usa
     direttamente e non contatta HuggingFace. Altrimenti tenta la cache HF
     in modalità offline, e come ultima risorsa il download.
+
+    Se il modello non è disponibile, l'app resta funzionante: i recognizer
+    deterministici (CF, P.IVA, IBAN, email, telefono…) e il dizionario
+    nomi/cognomi continuano a lavorare.  Solo il rilevamento neurale di
+    nomi isolati e luoghi generici degrada.
     """
 
     # Provo prima offline: se il modello è già disponibile, niente rete.

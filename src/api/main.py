@@ -17,12 +17,15 @@ Endpoints:
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import tempfile
 import threading
 import uuid
 from pathlib import Path
+
+logger = logging.getLogger("privacybridge.api")
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse
@@ -471,7 +474,20 @@ async def get_index():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "versione": app.version}
+    info: dict = {"status": "ok", "versione": app.version}
+    try:
+        from backend.motore_neurale import stato_modello
+
+        info["modello"] = stato_modello()
+    except Exception as e:
+        logger.debug("stato_modello fallito: %s", e)
+    try:
+        from backend.vault_crypto import vault_is_encrypted
+
+        info["vault_cifrato"] = vault_is_encrypted()
+    except Exception as e:
+        logger.debug("vault_is_encrypted fallito: %s", e)
+    return info
 
 
 @app.post("/precarica")
