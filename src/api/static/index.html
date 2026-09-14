@@ -1,0 +1,3670 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PrivacyBridge</title>
+<script>
+// Il tema va deciso prima che il documento si disegni, altrimenti la
+// finestra lampeggia in chiaro per un istante prima di passare al buio.
+// Alla prima apertura si segue l'impostazione del sistema operativo.
+(function () {
+  var salvato = null;
+  try { salvato = localStorage.getItem("pb-tema"); } catch (e) { salvato = null; }
+  if (salvato !== "chiaro" && salvato !== "scuro") {
+    salvato = window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "scuro" : "chiaro";
+  }
+  document.documentElement.setAttribute("data-theme", salvato);
+})();
+</script>
+<style>
+/* ==========================================================================
+   PrivacyBridge — sistema visivo
+   --------------------------------------------------------------------------
+   Due temi, non uno invertito: il chiaro è carta, il scuro è vetro
+   retroilluminato. Nel chiaro la gerarchia viene dalle ombre minime e dai
+   fili; nello scuro dalle differenze di luminosità fra superfici, perché
+   un'ombra su fondo scuro non si vede.
+   Contrasti misurati con scripts/misura_contrasti.py — non stimati.
+   ========================================================================== */
+
+:root {
+  /* ---- Tipografia: solo font di sistema, resa coerente su macOS e Windows */
+  --f-corpo: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+             "Segoe UI Variable Text", "Segoe UI", system-ui,
+             "Helvetica Neue", Arial, sans-serif;
+  /* Monospazio SOLO dove i segnaposto si confrontano carattere per
+     carattere: i chip «PERSONA_1», la colonna Placeholder, l'id di
+     sessione. In nessun altro punto. */
+  --f-mono:  ui-monospace, "SF Mono", SFMono-Regular, Menlo,
+             "Cascadia Mono", Consolas, "DejaVu Sans Mono", monospace;
+
+  /* ---- Quattro corpi in tutta l'applicazione. Nessun altro. */
+  --t-1: 20px;    /* marchio, titoli di dialogo */
+  --t-2: 14px;    /* corpo, pulsanti, testo dei pannelli */
+  --t-3: 12.5px;  /* note, celle di tabella, metriche */
+  --t-4: 11px;    /* etichette in maiuscoletto, chip */
+
+  --lh-corpo:  1.5;
+  --lh-titolo: 1.2;
+
+  /* ---- Spaziatura: modulo 4px. Nessun valore fuori scala nel foglio. */
+  --s1:  4px;  --s2:  8px;  --s3: 12px;  --s4: 16px;
+  --s5: 20px;  --s6: 24px;  --s7: 32px;  --s8: 48px;
+
+  /* ---- Altezze dei controlli: anch'esse sul modulo. */
+  --h-barra:      52px;
+  --h-controllo:  32px;
+  --h-controllo-s: 24px;
+  --h-riga:       40px;
+  --h-icona:      28px;
+  --h-testa:      52px;
+
+  /* ---- Raggi */
+  --r-chip:      4px;
+  --r-controllo: 6px;
+  --r-pannello: 10px;
+
+  --tratto: 1px;
+
+  /* ---- Dimensioni di layout */
+  --largh-max:  1280px;
+  --h-tavolo:   clamp(240px, 32vh, 460px);
+  --h-fondo:    340px;
+  --h-suggeriti: 240px;
+  --gola:       var(--s5);
+
+  /* ---- Movimento: solo opacità e trasformazioni, 160ms. */
+  --moto: 160ms;
+  --curva: cubic-bezier(.2, 0, .2, 1);
+}
+
+/* ==========================================================================
+   TEMA CHIARO — carta
+   ========================================================================== */
+
+:root,
+[data-theme="chiaro"] {
+  color-scheme: light;
+
+  --sfondo:        #F4F4F2;  /* tela dell'applicazione */
+  --superficie:    #FFFFFF;  /* pannelli, tabelle, dialoghi */
+  --superficie-2:  #EDEDEA;  /* pannello destro, intestazioni di tabella */
+  --superficie-3:  #E4E4E0;  /* passaggio del mouse, incassi */
+
+  --testo:        #1A1D21;
+  --testo-fioco:  #5A616B;
+  --testo-tenue:  #6B727C;
+
+  --bordo:           #E2E2DE;  /* filo decorativo: separa, non delimita */
+  --bordo-controllo: #868A92;  /* bordo di un controllo: deve stare a 3:1 */
+
+  --accento:      #8E1F3F;
+  --accento-vivo: #7A1A36;   /* pressione */
+  --accento-velo: #F6E9ED;   /* fondo dei valori reali */
+
+  --inverso-fondo: #22262B;  /* pulsante primario, banner */
+  --inverso-testo: #FFFFFF;
+
+  --ombra:      0 1px 2px rgba(20, 24, 28, .06), 0 1px 1px rgba(20, 24, 28, .04);
+  --ombra-alta: 0 12px 32px rgba(20, 24, 28, .16), 0 2px 8px rgba(20, 24, 28, .08);
+  --velo-modale: rgba(20, 24, 28, .38);
+
+  --scorri-pollice: #C6C7C2;
+  --scorri-pista:   transparent;
+  --selezione:      #D9E6F5;
+
+  /* Freccia dei menu a tendina. Un'immagine di sfondo non eredita
+     `currentColor`: il tratto va scritto per esteso, una volta per tema.
+     Qui è --testo-fioco (#5A616B). */
+  --freccia-giu: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%235A616B' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4.75 6 7.75 9 4.75'/%3E%3C/svg%3E");
+}
+
+/* ==========================================================================
+   TEMA SCURO — non l'inverso del chiaro: un disegno a sé.
+   Nessuna superficie è nera pura, nessun testo è bianco puro. Le ombre
+   spariscono: la profondità viene dalla luminosità (più in alto = più
+   chiaro). L'accento vira al rosa perché il vinaccia del tema chiaro,
+   su fondo scuro, scende sotto 2:1 e diventa illeggibile.
+   ========================================================================== */
+
+[data-theme="scuro"] {
+  color-scheme: dark;
+
+  --sfondo:        #15171A;
+  --superficie:    #1C1F23;
+  --superficie-2:  #23272C;
+  --superficie-3:  #2C3138;
+
+  --testo:        #E4E7EA;
+  --testo-fioco:  #A2A9B2;
+  --testo-tenue:  #949BA4;
+
+  --bordo:           #2E333A;
+  --bordo-controllo: #6E757E;
+
+  --accento:      #E8A0B4;
+  --accento-vivo: #F2B6C6;
+  --accento-velo: #351E26;
+
+  --inverso-fondo: #E4E7EA;
+  --inverso-testo: #15171A;
+
+  /* Nessuna ombra: su fondo scuro non si legge. Il rilievo è luminosità. */
+  --ombra:      none;
+  --ombra-alta: 0 16px 40px rgba(0, 0, 0, .55);
+  --velo-modale: rgba(8, 9, 11, .62);
+
+  --scorri-pollice: #3B4148;
+  --scorri-pista:   transparent;
+  --selezione:      #2E4257;
+
+  /* Stessa freccia, tratto --testo-fioco del tema scuro (#A2A9B2). */
+  --freccia-giu: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23A2A9B2' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4.75 6 7.75 9 4.75'/%3E%3C/svg%3E");
+}
+
+/* ==========================================================================
+   BASE
+   ========================================================================== */
+
+* { box-sizing: border-box; }
+
+/* ``display`` di una classe batte il default di [hidden]: senza questa
+   regola ogni elemento flex nascosto resterebbe visibile. Vale per tutti,
+   una volta sola, invece di una deroga per classe. */
+[hidden] { display: none !important; }
+
+html, body { height: 100%; margin: 0; }
+
+body {
+  background: var(--sfondo);
+  color: var(--testo);
+  font-family: var(--f-corpo);
+  font-size: var(--t-2);
+  line-height: var(--lh-corpo);
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  flex-direction: column;
+  min-width: 800px;
+}
+
+::selection { background: var(--selezione); color: var(--testo); }
+
+button, input, select, textarea {
+  font: inherit;
+  color: inherit;
+  font-family: inherit;
+}
+
+/* Cursore corretto ovunque: puntatore su ciò che si preme, testo su ciò
+   che si scrive, freccia su ciò che è spento. */
+button, select, summary { cursor: pointer; }
+input[type="text"], textarea { cursor: text; }
+input[type="checkbox"] { cursor: pointer; }
+button:disabled, select:disabled, input:disabled {
+  cursor: default;
+  opacity: .45;
+}
+
+::placeholder { color: var(--testo-tenue); opacity: 1; }
+
+/* Anello di fuoco unico in tutta l'applicazione. Mai rimosso senza
+   sostituto: dove si toglie l'outline (campi di testo grandi) si mette
+   un bordo o un fondo al suo posto. */
+:focus-visible {
+  outline: 2px solid var(--accento);
+  outline-offset: 2px;
+  border-radius: var(--r-chip);
+}
+
+/* ---- Barre di scorrimento, in entrambi i temi ---- */
+* { scrollbar-width: thin; scrollbar-color: var(--scorri-pollice) var(--scorri-pista); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--scorri-pista); }
+::-webkit-scrollbar-thumb {
+  background: var(--scorri-pollice);
+  border-radius: var(--r-controllo);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* ---- Movimento: solo opacità e trasformazioni, e mai contro la volontà
+   dell'utente. ---- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+/* ---- Icone: una sola famiglia, stesso tratto, stessa scatola ottica ---- */
+.i {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  display: block;
+}
+
+/* ==========================================================================
+   BARRA SUPERIORE
+   Non più una fascia scura su un'applicazione chiara: stessa superficie
+   del resto, separata da un filo. La gerarchia la fa il peso del marchio.
+   ========================================================================== */
+
+.barra {
+  flex: 0 0 auto;
+  background: var(--superficie);
+  border-bottom: var(--tratto) solid var(--bordo);
+  color: var(--testo);
+  display: flex;
+  align-items: center;
+  gap: var(--s5);
+  padding: 0 var(--s6);
+  height: var(--h-barra);
+}
+
+.marchio {
+  font-size: var(--t-2);
+  font-weight: 600;
+  letter-spacing: -.01em;
+  line-height: var(--lh-titolo);
+  white-space: nowrap;
+  color: var(--testo);
+}
+
+.schede { display: flex; gap: var(--s1); }
+
+.scheda {
+  background: none;
+  border: 0;
+  border-radius: var(--r-controllo);
+  color: var(--testo-fioco);
+  font-size: var(--t-2);
+  height: var(--h-controllo);
+  padding: 0 var(--s3);
+}
+.scheda:hover { color: var(--testo); background: var(--superficie-3); }
+.scheda:active { background: var(--superficie-3); transform: translateY(1px); }
+.scheda[aria-selected="true"] {
+  color: var(--testo);
+  background: var(--superficie-2);
+  font-weight: 500;
+}
+
+.barra-spazio { flex: 1 1 auto; }
+
+.barra-coda { display: flex; align-items: center; gap: var(--s2); }
+
+/* ---- Pulsante di sola icona (tema, chiusure) ---- */
+.b-icona {
+  background: none;
+  border: 0;
+  border-radius: var(--r-controllo);
+  color: var(--testo-fioco);
+  width: var(--h-icona);
+  height: var(--h-icona);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.b-icona:hover { color: var(--testo); background: var(--superficie-3); }
+.b-icona:active { transform: translateY(1px); }
+
+/* L'icona mostrata è quella del tema in cui si andrà, non di quello
+   corrente: si preme la luna per andare al buio. */
+[data-theme="scuro"] .i-luna,
+:root:not([data-theme="scuro"]) .i-sole { display: none; }
+
+/* ==========================================================================
+   MENU "ALTRO"
+   ========================================================================== */
+
+.menu-wrap { position: relative; }
+
+.b-menu {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  background: none;
+  border: var(--tratto) solid var(--bordo-controllo);
+  border-radius: var(--r-controllo);
+  color: var(--testo);
+  font-size: var(--t-2);
+  height: var(--h-controllo);
+  padding: 0 var(--s3);
+}
+.b-menu:hover { background: var(--superficie-3); }
+.b-menu:active { transform: translateY(1px); }
+.b-menu[aria-expanded="true"] { background: var(--superficie-3); }
+.b-menu .i { width: 12px; height: 12px; color: var(--testo-fioco); }
+
+.menu {
+  position: absolute;
+  top: calc(100% + var(--s2));
+  right: 0;
+  min-width: 300px;
+  max-width: 92vw;
+  background: var(--superficie);
+  color: var(--testo);
+  border: var(--tratto) solid var(--bordo);
+  border-radius: var(--r-pannello);
+  box-shadow: var(--ombra-alta);
+  padding: var(--s3);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+[data-theme="scuro"] .menu { background: var(--superficie-2); }
+
+.menu-sezione { display: flex; flex-direction: column; gap: var(--s2); }
+.menu-sezione + .menu-sezione {
+  padding-top: var(--s3);
+  border-top: var(--tratto) solid var(--bordo);
+}
+
+.menu-titolo {
+  font-size: var(--t-4);
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--testo-fioco);
+}
+
+.b-menu-voce {
+  background: none;
+  border: 0;
+  text-align: left;
+  padding: var(--s2);
+  border-radius: var(--r-chip);
+  font-size: var(--t-2);
+  color: var(--testo);
+}
+.b-menu-voce:hover { background: var(--superficie-3); }
+.b-menu-voce:active { transform: translateY(1px); }
+
+.menu-riga-btn { display: flex; gap: var(--s2); }
+.menu-riga-btn .b-menu-voce { flex: 1 1 auto; }
+
+.menu-riga-input {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s1) var(--s2);
+  font-size: var(--t-2);
+}
+.menu-riga-input select { margin-left: auto; }
+
+/* ---- Campi e liste a discesa: una sola resa in tutta l'applicazione ---- */
+select,
+input[type="text"] {
+  border: var(--tratto) solid var(--bordo-controllo);
+  border-radius: var(--r-controllo);
+  background: var(--superficie);
+  color: var(--testo);
+  height: var(--h-controllo-s);
+  padding: 0 var(--s2);
+  font-size: var(--t-3);
+}
+select:hover:not(:disabled),
+input[type="text"]:hover:not(:disabled) { border-color: var(--testo-fioco); }
+
+#sel-sessione {
+  font-family: var(--f-mono);
+  font-size: var(--t-3);
+  width: 100%;
+}
+
+/* ==========================================================================
+   BANNER
+   ========================================================================== */
+
+.banner {
+  flex: 0 0 auto;
+  background: var(--inverso-fondo);
+  color: var(--inverso-testo);
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s3) var(--s6);
+  font-size: var(--t-3);
+}
+.banner .marca {
+  font-size: var(--t-4);
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  opacity: .75;
+  flex: 0 0 auto;
+}
+.banner .testo { flex: 1 1 auto; }
+.banner .chiudi {
+  background: none;
+  border: 0;
+  color: var(--inverso-testo);
+  border-radius: var(--r-chip);
+  width: var(--h-controllo-s);
+  height: var(--h-controllo-s);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: .7;
+}
+.banner .chiudi:hover { opacity: 1; }
+.banner .chiudi:active { transform: translateY(1px); }
+.banner :focus-visible { outline-color: var(--inverso-testo); }
+
+.agg-link {
+  color: var(--inverso-testo);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-size: var(--t-3);
+  flex: 0 0 auto;
+}
+
+.riga-check {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  font-size: var(--t-3);
+  color: var(--testo);
+  padding-top: var(--s2);
+  border-top: var(--tratto) solid var(--bordo);
+}
+.riga-check label {
+  display: flex;
+  gap: var(--s2);
+  align-items: center;
+  cursor: pointer;
+}
+.check-nota {
+  font-size: var(--t-4);
+  color: var(--testo-fioco);
+  padding-left: var(--s6);
+}
+
+/* ==========================================================================
+   IMPIANTO
+   ``main`` è il contenitore che scorre e il tavolo ha altezza propria:
+   così quando compaiono la tabella, i suggerimenti o l'avanzamento, i
+   pannelli non si muovono di un pixel.
+   ========================================================================== */
+
+main {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  /* Il fondo lo chiude la striscia della firma. 16px qui e 8px sotto la
+     firma: più aria sopra che sotto, perché il rischio vero non è che la
+     firma sembri staccata dal bordo — è che a tavolo scorrevole, con
+     l'ultima riga tagliata a metà, sembri un'altra riga della tabella. */
+  padding: var(--s5) var(--s6) var(--s4);
+}
+
+/* ---- La firma. Chiude la colonna del corpo come ``header`` la apre: una
+   striscia propria, non un elemento fisso sopra il contenuto. Il primo
+   tentativo era `position: fixed` nel margine inferiore di ``main``, ed
+   era sbagliato: ``main`` scorre, e appena la tabella supera la finestra
+   il testo passa sotto la firma. Una scritta che si sovrappone a una riga
+   di dati è esattamente l'etichetta appiccicata che non dev'essere.
+   Nel flusso costa 19px di altezza e non si sovrappone mai a niente.
+   Niente filo di separazione e stesso fondo della tela: deve leggersi
+   come l'ultima riga del foglio, non come una barra di stato.
+   Il colore è --testo-fioco e non il più smorto --testo-tenue: misurato,
+   quest'ultimo dà 4,41:1 sulla tela chiara, sotto il 4,5:1 di AA. La
+   discrezione la fanno il corpo (11px, il più piccolo della scala) e la
+   posizione ai margini; non un grigio illeggibile. Per la stessa ragione
+   la gerarchia interna è di peso e non di tinta. ---- */
+.firma-prodotto {
+  flex: 0 0 auto;
+  /* Stessa colonna di ``.vista``: --largh-max più i due margini di ``main``,
+     centrata. Ancorata al bordo della finestra invece che a quello del
+     pannello, su uno schermo largo la firma se ne andrebbe per conto suo,
+     staccata dal foglio che dovrebbe firmare. */
+  width: 100%;
+  max-width: calc(var(--largh-max) + var(--s6) * 2);
+  margin: 0 auto;
+  padding: 0 var(--s6) var(--s2);
+  text-align: right;
+  font-size: var(--t-4);
+  line-height: 1;
+  letter-spacing: .02em;
+  color: var(--testo-fioco);
+  user-select: none;
+  white-space: nowrap;
+}
+.firma-prodotto .firma-marchio { font-weight: 600; }
+.firma-prodotto .firma-autore { letter-spacing: .01em; }
+
+.vista {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: var(--largh-max);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+/* ==========================================================================
+   BARRA DELLE AZIONI
+   ========================================================================== */
+
+.azioni {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: var(--h-controllo);
+}
+
+/* Il secondario non ha fondo proprio: appoggiato su una superficie o
+   sulla tela dev'essere sempre lo stesso oggetto, definito dal filo. Con
+   un fondo bianco spariva dentro i dialoghi bianchi e sporgeva sulla tela
+   grigia: due pulsanti diversi con lo stesso nome. */
+.b {
+  background: transparent;
+  border: var(--tratto) solid var(--bordo-controllo);
+  border-radius: var(--r-controllo);
+  color: var(--testo);
+  height: var(--h-controllo);
+  padding: 0 var(--s4);
+  font-size: var(--t-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+}
+.b:hover:not(:disabled) { background: var(--superficie-3); }
+.b:active:not(:disabled) { transform: translateY(1px); }
+
+/* Primario: l'unico pieno della schermata. Uno solo per superficie. */
+.b-primario {
+  background: var(--inverso-fondo);
+  border-color: var(--inverso-fondo);
+  color: var(--inverso-testo);
+}
+.b-primario:hover:not(:disabled) { background: var(--inverso-fondo); opacity: .88; }
+.b-primario:active:not(:disabled) { transform: translateY(1px); opacity: .8; }
+
+/* Secondario silenzioso: accanto al primario non deve competere. */
+.b-fioco {
+  background: none;
+  border-color: transparent;
+  color: var(--testo-fioco);
+  padding: 0 var(--s3);
+}
+.b-fioco:hover:not(:disabled) { color: var(--testo); background: var(--superficie-3); }
+
+.b-piccolo { height: var(--h-controllo-s); padding: 0 var(--s3); font-size: var(--t-3); }
+
+.azioni-spazio { flex: 1 1 auto; }
+
+/* Lo stato tiene sempre la sua altezza, anche vuoto: se apparisse solo
+   quando c'è testo, la riga delle azioni salterebbe. */
+.stato {
+  font-size: var(--t-3);
+  color: var(--testo-fioco);
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: var(--h-controllo);
+  text-align: right;
+}
+.stato.lavora::before {
+  content: "";
+  width: var(--s2);
+  height: var(--s2);
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--accento);
+  animation: pulsa 1200ms ease-in-out infinite;
+}
+@keyframes pulsa { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+.stato.fatto { color: var(--testo); }
+
+/* ==========================================================================
+   TAVOLO: i due pannelli
+   Niente più costole colorate spesse. I due pannelli si distinguono per
+   superficie e posizione, non per un bordo acceso.
+   ========================================================================== */
+
+.tavolo {
+  flex: 1 1 auto;
+  min-height: var(--h-tavolo);
+  display: flex;
+  align-items: stretch;
+}
+
+/* Il fondo tiene un'altezza propria e costante: la tabella delle entità e
+   quella dei suggerimenti se la dividono. Così l'apparire dei
+   suggerimenti non sposta i due pannelli sopra. */
+.fondo {
+  flex: 0 0 auto;
+  height: var(--h-fondo);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+.pannello {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border: var(--tratto) solid var(--bordo);
+  border-radius: var(--r-pannello);
+  box-shadow: var(--ombra);
+  overflow: hidden;
+  position: relative;
+}
+
+.pannello.sx { background: var(--superficie); }
+.pannello.dx { background: var(--superficie-2); }
+[data-theme="scuro"] .pannello.sx { background: var(--superficie); }
+[data-theme="scuro"] .pannello.dx { background: var(--superficie-2); }
+
+/* L'altezza minima è costante: senza, la testata con il pulsante è più
+   alta di quella senza, e i due testi da confrontare partono da quote
+   diverse. Il confronto fianco a fianco è il gesto dell'applicazione. */
+.testa {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  padding: var(--s3) var(--s4);
+  min-height: var(--h-testa);
+}
+
+.testa h2 {
+  margin: 0;
+  font-size: var(--t-3);
+  font-weight: 600;
+  line-height: var(--lh-titolo);
+  color: var(--testo);
+}
+
+/* Il sottotitolo cede per primo: è l'unico pezzo della testata che si può
+   accorciare senza perdere una funzione. Senza `min-width: 0` un flex non
+   scende sotto il proprio contenuto, e alla larghezza minima della finestra
+   (800px) spingerebbe il pulsante oltre il bordo del pannello, che ha
+   `overflow: hidden` — il pulsante sparirebbe invece di stringersi. */
+.testa .sotto {
+  font-size: var(--t-3);
+  color: var(--testo-fioco);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Fuori dal gruppo di base: allineato alla linea di scrittura, un pulsante
+   alto 28px trascina in basso il titolo che gli sta accanto, e il pannello
+   con il pulsante comincia a scrivere più in basso dell'altro. */
+.testa .coda { margin-left: auto; align-self: center; }
+
+.campo {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--testo);
+  padding: 0 var(--s4) var(--s3);
+  font-family: var(--f-corpo);
+  font-size: var(--t-2);
+  line-height: var(--lh-corpo);
+  overflow: auto;
+  resize: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  tab-size: 4;
+}
+/* L'outline sul textarea taglierebbe il testo contro il bordo del
+   pannello: il fuoco si segnala sul pannello intero. */
+textarea.campo:focus { outline: none; }
+.pannello:focus-within { border-color: var(--bordo-controllo); }
+
+/* `text-wrap: balance` distribuisce le parole fra le righe invece di
+   riempire la prima fino al limite: senza, "Il testo con i segnaposto
+   apparirà qui." lasciava "qui." da solo sulla seconda riga. Dove non è
+   supportato il testo va a capo come prima, senza rompersi. */
+.vuoto {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s6);
+  text-align: center;
+  text-wrap: balance;
+  font-size: var(--t-3);
+  color: var(--testo-fioco);
+  max-width: 32ch;
+  margin: 0 auto;
+  line-height: var(--lh-corpo);
+}
+
+/* Non è flex: un contenitore flex scarta i nodi di solo spazio fra i suoi
+   elementi, e lo spazio prima del primo separatore sparirebbe. */
+.metriche {
+  flex: 0 0 auto;
+  padding: var(--s2) var(--s4);
+  border-top: var(--tratto) solid var(--bordo);
+  font-size: var(--t-4);
+  line-height: var(--lh-corpo);
+  color: var(--testo-fioco);
+  font-variant-numeric: tabular-nums;
+  min-height: var(--h-controllo);
+}
+.metriche b { color: var(--testo); font-weight: 600; }
+
+/* ---- La gola: solo aria fra i due pannelli, più la tacca che allinea
+   il segnaposto al suo valore. ---- */
+.gola {
+  flex: 0 0 var(--gola);
+  width: var(--gola);
+  position: relative;
+}
+
+.tacca {
+  position: absolute;
+  left: var(--s1);
+  right: var(--s1);
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accento);
+  opacity: 0;
+  transition: opacity var(--moto) var(--curva);
+  pointer-events: none;
+}
+.tacca.visibile { opacity: 1; }
+
+/* ==========================================================================
+   MARCHE IN LINEA
+   Un solo accento: il valore reale — la cosa che l'utente deve notare —
+   lo porta. Il segnaposto è tecnico e resta neutro, in monospazio,
+   perché lì i caratteri si confrontano uno per uno.
+   ========================================================================== */
+
+.segnaposto {
+  font-family: var(--f-mono);
+  font-size: .92em;
+  color: var(--testo);
+  background: var(--superficie-3);
+  border-radius: var(--r-chip);
+  padding: 1px 3px;
+  cursor: default;
+}
+
+.valore {
+  color: var(--accento);
+  background: var(--accento-velo);
+  border-radius: var(--r-chip);
+  padding: 1px 3px;
+  cursor: default;
+}
+
+/* Dentro la prosa il riempimento del chip allargherebbe l'avanzamento del
+   testo e comparirebbe uno spazio finto prima della punteggiatura:
+   "Berretti , nato". Il margine negativo lo compensa. Nelle celle di
+   tabella non si applica, perché lì il chip deve restare a filo di colonna. */
+.campo .segnaposto,
+.campo .valore,
+.campo .ignoto { margin: 0 -2px; }
+
+.segnaposto.acceso,
+.valore.acceso { outline: 2px solid var(--accento); outline-offset: 1px; }
+tr.acceso > td { background: var(--superficie-2); }
+
+.ignoto {
+  font-family: var(--f-mono);
+  font-size: .92em;
+  color: var(--testo-fioco);
+  background: var(--superficie-3);
+  border-radius: var(--r-chip);
+  padding: 1px 3px;
+}
+
+/* Dentro i pannelli il chip si comanda: il puntatore deve dirlo prima del
+   click. Nelle celle di tabella no — lì è solo un'etichetta. */
+.campo .segnaposto,
+.campo .valore { cursor: pointer; }
+.campo .segnaposto:focus-visible,
+.campo .valore:focus-visible {
+  outline: 2px solid var(--accento);
+  outline-offset: 2px;
+}
+
+/* ==========================================================================
+   COMANDO DIRETTO SUL TESTO
+   Sta su `position: fixed` per una ragione precisa: qualunque cosa dentro
+   il flusso del pannello sposterebbe il testo sotto di sé nel momento in
+   cui compare, e l'utente perderebbe di vista la riga che stava leggendo.
+   Fuori dal flusso non muove nulla.
+   ========================================================================== */
+
+.comando {
+  position: fixed;
+  /* Sopra i pannelli, sotto il velo dei dialoghi (20) e il menu Altro
+     (30): un comando che compare al passaggio del mouse è la cosa meno
+     importante sullo schermo, e non deve mai coprirne una scelta
+     deliberata. */
+  z-index: 15;
+  min-width: 232px;
+  max-width: min(320px, 92vw);
+  background: var(--superficie);
+  border: var(--tratto) solid var(--bordo);
+  border-radius: var(--r-pannello);
+  box-shadow: var(--ombra-alta);
+  padding: var(--s2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity var(--moto) var(--curva), transform var(--moto) var(--curva);
+}
+.comando.visibile { opacity: 1; transform: none; }
+[data-theme="scuro"] .comando { background: var(--superficie-2); }
+
+.comando-testa {
+  padding: var(--s1) var(--s2) var(--s2);
+  border-bottom: var(--tratto) solid var(--bordo);
+  margin-bottom: var(--s1);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.comando-valore {
+  font-size: var(--t-3);
+  color: var(--testo);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.comando-tipo {
+  font-size: var(--t-4);
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--testo-fioco);
+}
+
+.comando-voce {
+  background: none;
+  border: 0;
+  text-align: left;
+  padding: var(--s2);
+  border-radius: var(--r-chip);
+  font-size: var(--t-2);
+  color: var(--testo);
+  width: 100%;
+}
+.comando-voce:hover { background: var(--superficie-3); }
+.comando-voce:active { transform: translateY(1px); }
+.comando-voce[disabled] { color: var(--testo-tenue); background: none; }
+
+.comando-riga {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s1) var(--s2) var(--s2);
+}
+.comando-riga select,
+.comando-riga input[type="text"] { flex: 1 1 auto; min-width: 0; height: var(--h-controllo-s); }
+.comando-riga input[type="text"] {
+  padding: 0 var(--s1);
+  border: 1px solid var(--bordo);
+  background: var(--superficie);
+  color: var(--testo);
+  border-radius: var(--r-1);
+  font: inherit;
+}
+.comando-riga input[type="text"]:focus {
+  outline: 2px solid var(--fuoco);
+  outline-offset: 1px;
+}
+.comando-riga .b { flex: 0 0 auto; }
+
+.comando-esito {
+  padding: var(--s1) var(--s2);
+  font-size: var(--t-4);
+  color: var(--testo-fioco);
+}
+
+/* ==========================================================================
+   TABELLE
+   ``table-layout: fixed`` non è un dettaglio: senza, le colonne si
+   ridimensionano a ogni riga aggiunta e la tabella balla sotto gli occhi.
+   Le larghezze sono tarate perché il vuoto al centro sparisca: la colonna
+   del valore reale prende l'avanzo, ma l'avanzo è limitato dalla larghezza
+   massima del contenuto.
+   ========================================================================== */
+
+.tabella-box {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--superficie);
+  border: var(--tratto) solid var(--bordo);
+  border-radius: var(--r-pannello);
+  box-shadow: var(--ombra);
+  overflow: hidden;
+}
+
+.tabella-testa {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  padding: var(--s3) var(--s4);
+}
+.tabella-testa h2 {
+  margin: 0;
+  font-size: var(--t-3);
+  font-weight: 600;
+  line-height: var(--lh-titolo);
+}
+.tabella-testa .nota { font-size: var(--t-3); color: var(--testo-fioco); }
+.tabella-testa .coda {
+  margin-left: auto; display: flex; gap: var(--s2); align-self: center;
+}
+
+.tabella-scorri { flex: 1 1 auto; overflow: auto; min-height: 0; }
+
+table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: var(--t-3);
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--superficie);
+  text-align: left;
+  font-size: var(--t-4);
+  font-weight: 600;
+  color: var(--testo-fioco);
+  padding: var(--s2) var(--s3);
+  border-bottom: var(--tratto) solid var(--bordo);
+  white-space: nowrap;
+}
+
+tbody td {
+  height: var(--h-riga);
+  padding: 0 var(--s3);
+  border-bottom: var(--tratto) solid var(--bordo);
+  vertical-align: middle;
+  font-size: var(--t-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover td { background: var(--superficie-2); }
+
+/* La colonna del segnaposto ha misura fissa perché il suo contenuto ha
+   lunghezza nota: in percentuale lasciava 250px di vuoto fra il chip e il
+   valore reale. L'avanzo va al valore reale, l'unico che può crescere. */
+.c-ph   { width: 200px; }
+.c-tipo { width: 168px; }
+.c-occ  { width: 92px; font-variant-numeric: tabular-nums; }
+.c-corr { width: 132px; font-size: var(--t-4); color: var(--testo-fioco); }
+.c-rim  { width: 64px; text-align: center; }
+.c-sugg-ok { width: 72px; text-align: center; }
+/* "Correlato a" compare solo se qualcosa è davvero correlato: una colonna
+   di trattini è rumore. */
+.tabella-box:not(.mostra-correlato) .c-corr { display: none; }
+
+.c-ph .segnaposto { font-size: var(--t-3); }
+.c-corr .segnaposto { font-size: var(--t-4); }
+
+/* Il pulsante "rimuovi" resta visibile, solo attenuato: nascosto fino al
+   passaggio del mouse l'utente non scoprirebbe come si toglie una riga.
+   Attenuato con un colore misurato, non con l'opacità: `opacity: .5` su
+   --testo-fioco dava un grigio effettivo a 2,1:1, sotto la soglia di 3:1
+   che vale per i comandi. */
+.b-rimuovi, .b-ignora {
+  background: none;
+  border: var(--tratto) solid transparent;
+  border-radius: var(--r-chip);
+  color: var(--testo-tenue);
+  line-height: 1;
+  width: var(--h-controllo-s);
+  height: var(--h-controllo-s);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.b-rimuovi:hover, .b-ignora:hover { background: var(--superficie-3); color: var(--testo); }
+.b-rimuovi:active, .b-ignora:active { transform: translateY(1px); }
+
+.tabella-box.suggeriti { max-height: var(--h-suggeriti); }
+.tabella-box.suggeriti .sugg-valore { font-size: var(--t-3); color: var(--testo); }
+.tabella-box.suggeriti tr.nascosta { display: none; }
+.tabella-box.suggeriti .chk-trattieni { cursor: pointer; }
+
+.attesa { font-size: var(--t-4); color: var(--testo-fioco); }
+
+/* Il valore reale è modificabile: sembra testo finché non lo si tocca. */
+input.in-valore {
+  width: 100%;
+  border: var(--tratto) solid transparent;
+  border-radius: var(--r-chip);
+  background: transparent;
+  font-family: var(--f-corpo);
+  font-size: var(--t-3);
+  color: var(--testo);
+  height: var(--h-controllo-s);
+  padding: 0 var(--s2);
+}
+input.in-valore:hover { border-color: var(--bordo); background: var(--superficie-2); }
+input.in-valore:focus {
+  border-color: var(--bordo-controllo);
+  background: var(--superficie);
+  outline: 2px solid var(--accento);
+  outline-offset: 1px;
+}
+
+/* Nel corpo della tabella il menu a tendina si ripete su ogni riga: una
+   colonna di rettangoli bordati pesa più del dato che contiene. A riposo
+   resta la sola etichetta più la freccia — che serve a distinguerlo da un
+   testo — e il bordo torna quando il puntatore o la tastiera lo raggiunge. */
+select.sel-tipo, select.sel-sugg-tipo {
+  width: 100%;
+  font-size: var(--t-3);
+  -webkit-appearance: none;
+  appearance: none;
+  border-color: transparent;
+  background-color: transparent;
+  background-image: var(--freccia-giu);
+  background-repeat: no-repeat;
+  background-position: right var(--s1) center;
+  background-size: 12px 12px;
+  padding-right: var(--s5);
+  cursor: pointer;
+}
+select.sel-tipo:hover:not(:disabled),
+select.sel-sugg-tipo:hover:not(:disabled) {
+  border-color: var(--bordo-controllo);
+  background-color: var(--superficie);
+}
+select.sel-tipo:focus, select.sel-sugg-tipo:focus {
+  border-color: var(--bordo-controllo);
+  background-color: var(--superficie);
+}
+
+.tabella-vuota {
+  padding: var(--s7) var(--s6);
+  text-align: center;
+  text-wrap: balance;
+  font-size: var(--t-3);
+  color: var(--testo-fioco);
+}
+
+/* Tabella senza righe: le intestazioni non hanno nulla da intestare e
+   restano come rumore sopra un corpo vuoto, mentre il messaggio siede in
+   alto in un riquadro alto 340px. Nascoste le une, il messaggio occupa
+   tutto lo spazio e si centra. La classe è messa da `disegnaTabella`:
+   `:has()` non è affidabile nella WebView di macOS. */
+.tabella-box.vuota thead { display: none; }
+.tabella-box.vuota .tabella-scorri { display: flex; flex-direction: column; }
+.tabella-box.vuota .tabella-vuota { padding: var(--s6); }
+
+/* ==========================================================================
+   RIPRISTINA — avviso sui segnaposto
+   ========================================================================== */
+
+.avviso {
+  flex: 0 0 auto;
+  border: var(--tratto) solid var(--bordo);
+  border-radius: var(--r-pannello);
+  background: var(--superficie);
+  box-shadow: var(--ombra);
+  padding: var(--s3) var(--s4);
+  font-size: var(--t-3);
+  max-height: var(--h-suggeriti);
+  overflow: auto;
+}
+.avviso h3 {
+  margin: 0 0 var(--s1);
+  font-size: var(--t-3);
+  font-weight: 600;
+  line-height: var(--lh-titolo);
+}
+.avviso p { margin: var(--s1) 0; color: var(--testo-fioco); }
+.avviso ul { margin: var(--s1) 0 0; padding-left: var(--s4); }
+.avviso code { font-family: var(--f-mono); font-size: var(--t-3); color: var(--testo); }
+
+/* ==========================================================================
+   DIALOGHI
+   ========================================================================== */
+
+.velo {
+  position: fixed;
+  inset: 0;
+  background: var(--velo-modale);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+.velo.aperto { display: flex; }
+
+.info {
+  background: var(--superficie);
+  border: var(--tratto) solid var(--bordo);
+  border-radius: var(--r-pannello);
+  padding: var(--s7);
+  width: min(540px, 92vw);
+  max-height: 88vh;
+  box-shadow: var(--ombra-alta);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+[data-theme="scuro"] .info { background: var(--superficie-2); }
+
+.info .marchio {
+  font-size: var(--t-1);
+  font-weight: 600;
+  letter-spacing: -.01em;
+  line-height: var(--lh-titolo);
+  color: var(--testo);
+}
+.info .versione {
+  font-family: var(--f-mono);
+  font-size: var(--t-4);
+  color: var(--testo-fioco);
+}
+.info .descr {
+  font-size: var(--t-2);
+  line-height: var(--lh-corpo);
+  color: var(--testo-fioco);
+  margin: 0;
+}
+.info .firma {
+  font-size: var(--t-3);
+  color: var(--testo-fioco);
+  padding-top: var(--s3);
+  border-top: var(--tratto) solid var(--bordo);
+}
+
+.rubrica-dialog { width: min(720px, 96vw); max-height: 90vh; }
+
+.rubrica-riga-aggiungi {
+  display: flex;
+  gap: var(--s2);
+  align-items: center;
+}
+.rubrica-riga-aggiungi input[type=text] { flex: 1 1 auto; height: var(--h-controllo); }
+.rubrica-riga-aggiungi select { height: var(--h-controllo); }
+
+.rub-conteggio {
+  font-size: var(--t-3);
+  color: var(--testo-fioco);
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.rubrica-elenco {
+  flex: 1 1 auto;
+  min-height: 120px;
+  max-height: 360px;
+  overflow: auto;
+  border: var(--tratto) solid var(--bordo);
+  border-radius: var(--r-controllo);
+  background: var(--superficie);
+  padding: var(--s2);
+}
+[data-theme="scuro"] .rubrica-elenco { background: var(--sfondo); }
+.rubrica-elenco table { width: 100%; }
+.rubrica-elenco td {
+  padding: var(--s1) var(--s2);
+  border-bottom: var(--tratto) solid var(--bordo);
+}
+.rubrica-elenco td:first-child { color: var(--testo); }
+.rubrica-elenco td:nth-child(2) {
+  width: 140px;
+  font-size: var(--t-3);
+  color: var(--testo-fioco);
+}
+.rubrica-elenco td:last-child { width: 40px; text-align: right; }
+
+.cat-preset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+.cat-preset .preset {
+  height: var(--h-controllo-s);
+  padding: 0 var(--s3);
+  font-size: var(--t-3);
+  border: var(--tratto) solid var(--bordo-controllo);
+  border-radius: var(--r-controllo);
+  background: var(--superficie);
+  color: var(--testo);
+}
+.cat-preset .preset:hover { background: var(--superficie-3); }
+.cat-preset .preset:active { transform: translateY(1px); }
+.cat-preset .preset.attivo {
+  background: var(--inverso-fondo);
+  color: var(--inverso-testo);
+  border-color: var(--inverso-fondo);
+}
+/* "Personalizzato" non è un preset da premere: è la constatazione che
+   nessuno dei tre combacia con le categorie scelte. */
+.cat-preset .preset-stato {
+  cursor: default;
+  border-style: dashed;
+  color: var(--testo-fioco);
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Tre colonne, non due: su due, le ultime otto categorie finivano sotto
+   il bordo e nessuno le trovava — la barra di scorrimento su macOS è a
+   scomparsa, quindi il taglio era invisibile. Su tre stanno tutte. */
+.cat-lista {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--s1) var(--s3);
+  padding: var(--s3) 0;
+  border-top: var(--tratto) solid var(--bordo);
+  border-bottom: var(--tratto) solid var(--bordo);
+}
+.cat-lista label {
+  display: flex;
+  gap: var(--s2);
+  align-items: center;
+  padding: var(--s1) var(--s2);
+  font-size: var(--t-3);
+  cursor: pointer;
+  border-radius: var(--r-chip);
+}
+.cat-lista label:hover { background: var(--superficie-2); }
+
+.info .barra-info {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: var(--s2);
+}
+</style>
+</head>
+<body>
+
+<header class="barra">
+  <div class="marchio">PrivacyBridge</div>
+
+  <nav class="schede" role="tablist">
+    <button class="scheda" data-tab="anonimizza" role="tab" aria-selected="true">Anonimizza</button>
+    <button class="scheda" data-tab="ripristina" role="tab" aria-selected="false">Ripristina</button>
+  </nav>
+
+  <div class="barra-spazio"></div>
+
+  <div class="barra-coda">
+  <button class="b-icona" id="btn-tema" title="Passa al tema scuro"
+          aria-label="Passa al tema scuro">
+    <svg class="i i-luna" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/>
+    </svg>
+    <svg class="i i-sole" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="4.2"/>
+      <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/>
+    </svg>
+  </button>
+
+  <div class="menu-wrap">
+    <button class="b-menu" id="btn-menu" aria-haspopup="true"
+            aria-expanded="false" aria-controls="menu"
+            title="Sessioni, categorie, rubrica, impostazioni">
+      <span>Altro</span>
+      <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div class="menu" id="menu" role="menu" hidden>
+      <div class="menu-sezione">
+        <div class="menu-titolo">Sessione</div>
+        <select id="sel-sessione" aria-label="Sessione attiva"></select>
+        <div class="menu-riga-btn">
+          <button class="b-menu-voce" id="btn-nuova" role="menuitem">Nuova sessione</button>
+          <button class="b-menu-voce" id="btn-elimina" role="menuitem">Elimina</button>
+        </div>
+      </div>
+      <div class="menu-sezione">
+        <div class="menu-titolo">Cosa e come</div>
+        <button class="b-menu-voce" id="btn-categorie" role="menuitem">Cosa anonimizzare…</button>
+        <button class="b-menu-voce" id="btn-rubrica" role="menuitem">Rubrica personale…</button>
+        <button class="b-menu-voce" id="btn-vault" role="menuitem">Contenuto della sessione…</button>
+      </div>
+      <div class="menu-sezione">
+        <div class="menu-titolo">Impostazioni</div>
+        <label class="menu-riga-input" for="sel-lingua">
+          <span>Lingua del testo</span>
+          <select id="sel-lingua" aria-label="Lingua del testo">
+            <option value="it" selected>Italiano</option>
+            <option value="en">Inglese</option>
+          </select>
+        </label>
+        <button class="b-menu-voce" id="btn-info" role="menuitem">Informazioni & aggiornamenti…</button>
+      </div>
+    </div>
+  </div>
+  </div>
+</header>
+
+<div class="velo" id="velo-categorie" role="dialog" aria-modal="true" aria-labelledby="cat-titolo" hidden>
+  <div class="info rubrica-dialog">
+    <div class="marchio" id="cat-titolo">Cosa anonimizzare</div>
+    <p class="descr">
+      Attiva solo le categorie che ti servono per questo lavoro.
+      All'inizio sono spente quelle che raramente contengono dati sensibili
+      — luoghi, aziende, date, importi, indirizzi web — perché
+      anonimizzarle rende il testo difficile da capire per l'assistente AI.
+    </p>
+    <div class="cat-preset" id="cat-preset" role="group" aria-label="Preset di categorie"></div>
+    <div class="cat-lista" id="cat-lista"></div>
+    <div class="rubrica-riga-aggiungi">
+      <button class="b b-piccolo" id="btn-cat-default">Ripristina default</button>
+      <span class="rub-conteggio" id="cat-conteggio"></span>
+    </div>
+    <div class="barra-info">
+      <button class="b b-piccolo" id="btn-cat-chiudi">Chiudi</button>
+    </div>
+  </div>
+</div>
+
+<div class="velo" id="velo-rubrica" role="dialog" aria-modal="true" aria-labelledby="rubrica-titolo" hidden>
+  <div class="info rubrica-dialog">
+    <div class="marchio" id="rubrica-titolo">Rubrica personale</div>
+    <p class="descr">
+      I termini in rubrica vengono anonimizzati sempre, in ogni sessione.
+      Nomi di clienti, aziende ricorrenti, codici prodotto. I dati restano
+      su questo computer.
+    </p>
+
+    <div class="rubrica-riga-aggiungi">
+      <input type="text" id="rub-testo" placeholder="Testo da anonimizzare" spellcheck="false">
+      <select id="rub-tipo" aria-label="Tipo entità"></select>
+      <button class="b b-piccolo b-primario" id="btn-rub-aggiungi">Aggiungi</button>
+    </div>
+
+    <div class="rubrica-riga-aggiungi">
+      <input type="file" id="rub-file" accept=".csv,.txt" hidden>
+      <button class="b b-piccolo" id="btn-rub-importa">Importa CSV</button>
+      <span class="rub-conteggio" id="rub-conteggio">0 voci</span>
+    </div>
+
+    <div class="rubrica-elenco" id="rub-elenco">
+      <div class="tabella-vuota">Nessuna voce. Aggiungi manualmente o importa un CSV.</div>
+    </div>
+
+    <div class="barra-info">
+      <button class="b b-piccolo" id="btn-rubrica-chiudi">Chiudi</button>
+    </div>
+  </div>
+</div>
+
+<div class="velo" id="velo-vault" role="dialog" aria-modal="true" aria-labelledby="vault-titolo" hidden>
+  <div class="info rubrica-dialog">
+    <div class="marchio" id="vault-titolo">Contenuto della sessione</div>
+    <p class="descr">
+      Elenco dei valori reali trattenuti in questa sessione. Sono
+      visibili solo qui, sul tuo computer, e mai inviati altrove.
+    </p>
+    <div class="rubrica-riga-aggiungi">
+      <span class="rub-conteggio" id="vault-sessione-id"></span>
+      <button class="b b-piccolo" id="btn-vault-mostra">Mostra valori</button>
+      <span class="rub-conteggio" id="vault-conteggio"></span>
+    </div>
+    <div class="rubrica-elenco" id="vault-elenco">
+      <div class="tabella-vuota">Nessuna entità trattenuta in questa sessione.</div>
+    </div>
+    <div class="barra-info">
+      <button class="b b-piccolo" id="btn-vault-chiudi">Chiudi</button>
+    </div>
+  </div>
+</div>
+
+<div class="velo" id="velo-info" role="dialog" aria-modal="true" aria-labelledby="info-titolo" hidden>
+  <div class="info">
+    <div class="marchio" id="info-titolo">PrivacyBridge</div>
+    <div class="versione" id="info-versione">Lettura della versione…</div>
+    <p class="descr">Anonimizzazione locale reversibile di documenti.<br>
+       I dati non lasciano mai questo computer.</p>
+    <div class="firma">© 2026 Andrea Sforna — Licenza MIT</div>
+    <div class="riga-check">
+      <label>
+        <input type="checkbox" id="chk-aggiornamenti" checked>
+        Controlla la disponibilità di aggiornamenti all'avvio
+      </label>
+      <div class="check-nota" id="check-nota"></div>
+    </div>
+    <div class="barra-info">
+      <button class="b b-piccolo" id="btn-info-chiudi">Chiudi</button>
+    </div>
+  </div>
+</div>
+
+<div class="banner banner-info" id="banner-agg" role="status" hidden>
+  <span class="marca" id="agg-marca">Aggiornamento</span>
+  <span class="testo" id="agg-testo"></span>
+  <a class="agg-link" id="agg-link" href="#" target="_blank" rel="noopener">Scarica</a>
+  <button class="chiudi" id="agg-chiudi" aria-label="Chiudi"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+</div>
+
+<div class="banner" id="banner" role="alert" hidden>
+  <span class="marca" id="banner-marca">Errore</span>
+  <span class="testo" id="banner-testo"></span>
+  <button class="chiudi" id="banner-chiudi" aria-label="Chiudi"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+</div>
+
+<main>
+
+  <!-- =========================================================== ANONIMIZZA -->
+  <section class="vista" id="vista-anonimizza">
+
+    <div class="azioni">
+      <button class="b b-primario" id="btn-anonimizza">Anonimizza</button>
+      <button class="b b-fioco" id="btn-carica">Carica un documento</button>
+      <input type="file" id="file" accept=".txt,.pdf,.docx,.md,.markdown,.csv,.eml,.msg,.rtf,.odt,.xlsx,.html,.htm" hidden>
+      <button class="b b-fioco" id="btn-svuota" hidden>Svuota</button>
+      <div class="azioni-spazio"></div>
+      <!-- Compare solo durante un'analisi lunga, alla sinistra dello stato:
+           lo stato resta ancorato al bordo destro e non si sposta. -->
+      <button class="b b-fioco" id="btn-annulla" hidden>Annulla</button>
+      <div class="stato" id="stato"></div>
+    </div>
+
+    <div class="tavolo">
+      <article class="pannello sx" id="pannello-sx">
+        <div class="testa">
+          <h2>Originale</h2>
+          <span class="sotto" id="sotto-sx">resta su questa macchina</span>
+          <span class="coda"><button class="b b-piccolo" id="btn-modifica" hidden>Modifica testo</button></span>
+        </div>
+        <textarea class="campo" id="ta-originale" spellcheck="false" autofocus
+          placeholder="Incolla il testo, poi premi Anonimizza."></textarea>
+        <div class="campo" id="vista-originale" hidden></div>
+        <div class="metriche" id="metriche-sx">&nbsp;</div>
+      </article>
+
+      <div class="gola" id="gola" aria-hidden="true">
+        <div class="tacca" id="tacca"></div>
+      </div>
+
+      <article class="pannello dx" id="pannello-dx">
+        <div class="testa">
+          <h2>Anonimizzato</h2>
+          <span class="sotto" id="sotto-dx">pronto per l'invio</span>
+          <span class="coda">
+            <button class="b b-piccolo b-primario" id="btn-copia" hidden>Copia</button>
+          </span>
+        </div>
+        <div class="campo" id="vista-anonimizzato" hidden></div>
+        <div class="vuoto" id="vuoto-dx">Il testo con i segnaposto apparirà qui.</div>
+        <div class="metriche" id="metriche-dx">&nbsp;</div>
+      </article>
+    </div>
+
+    <!-- Comando su un'entità già riconosciuta: compare passando il mouse
+         su un segnaposto a destra o sul valore evidenziato a sinistra.
+         Due sole voci — Cambia tipo, Modifica valore. Ripristina si fa
+         dalla tabella (colonna "Rimuovi"), Ricorda sempre dalla scheda
+         "Rubrica": lì c'è spazio, qui vince la brevità. -->
+    <div class="comando" id="comando-entita" role="menu" aria-label="Azioni sull'entità" hidden>
+      <div class="comando-testa">
+        <div class="comando-valore" id="ce-valore"></div>
+        <div class="comando-tipo" id="ce-tipo"></div>
+      </div>
+      <button class="comando-voce" id="ce-cambia" role="menuitem" aria-expanded="false">Cambia tipo</button>
+      <div class="comando-riga" id="ce-riga-tipi" hidden>
+        <select id="ce-tipi" aria-label="Nuovo tipo"></select>
+        <button class="b b-piccolo b-primario" id="ce-conferma">Applica</button>
+      </div>
+      <button class="comando-voce" id="ce-modifica" role="menuitem" aria-expanded="false">Modifica valore</button>
+      <div class="comando-riga" id="ce-riga-modifica" hidden>
+        <input type="text" id="ce-valore-input" aria-label="Nuovo valore" />
+        <button class="b b-piccolo b-primario" id="ce-conferma-valore">Applica</button>
+      </div>
+      <div class="comando-esito" id="ce-esito" hidden></div>
+    </div>
+
+    <!-- Comando su una selezione libera nel pannello di sinistra. -->
+    <div class="comando" id="comando-selezione" role="menu" aria-label="Anonimizza la selezione" hidden>
+      <div class="comando-testa">
+        <div class="comando-valore" id="cs-valore"></div>
+        <div class="comando-tipo">non ancora anonimizzato</div>
+      </div>
+      <button class="comando-voce" id="cs-anonimizza" role="menuitem"></button>
+      <div class="comando-riga">
+        <select id="cs-tipi" aria-label="Tipo da assegnare"></select>
+      </div>
+    </div>
+
+    <div class="fondo">
+    <section class="tabella-box vuota">
+      <div class="tabella-testa">
+        <h2>Entità trattenute</h2>
+        <span class="nota">Correggi valore o tipo, aggiungi o togli righe, poi rianonimizza.</span>
+        <span class="coda">
+          <button class="b b-piccolo" id="btn-aggiungi">+ Aggiungi</button>
+          <button class="b b-piccolo b-primario" id="btn-rianonimizza" hidden>Rianonimizza</button>
+        </span>
+      </div>
+      <div class="tabella-scorri">
+        <table>
+          <thead>
+            <tr>
+              <th class="c-ph">Segnaposto</th>
+              <th>Valore reale</th>
+              <th class="c-tipo">Tipo</th>
+              <th class="c-occ">Occorrenze</th>
+              <th class="c-corr" title="Se questo valore sembra riferito alla stessa entità di un altro placeholder, appare qui">Correlato a</th>
+              <th class="c-rim">Rimuovi</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+        <div class="tabella-vuota vuoto" id="tabella-vuota">Nessuna entità: anonimizza un testo o aggiungi una riga.</div>
+      </div>
+    </section>
+
+    <section class="tabella-box suggeriti" id="tabella-suggerimenti" hidden>
+      <div class="tabella-testa">
+        <h2>Possibili entità</h2>
+        <span class="nota">Nomi ambigui che il motore non è sicuro di dover anonimizzare. Spunta quelli da trattenere, poi Rianonimizza.</span>
+        <span class="coda">
+          <button class="b b-piccolo" id="btn-sugg-espandi" hidden>Mostra tutti</button>
+          <button class="b b-piccolo" id="btn-sugg-nascondi">Nascondi tutti</button>
+        </span>
+      </div>
+      <div class="tabella-scorri">
+        <table>
+          <thead>
+            <tr>
+              <th class="c-sugg-ok">Trattieni</th>
+              <th>Valore</th>
+              <th class="c-tipo">Tipo</th>
+              <th class="c-occ">Occorrenze</th>
+              <th class="c-rim">Ignora</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-suggerimenti"></tbody>
+        </table>
+      </div>
+    </section>
+    </div>
+  </section>
+
+  <!-- =========================================================== RIPRISTINA -->
+  <section class="vista" id="vista-ripristina" hidden>
+
+    <div class="azioni">
+      <button class="b b-primario" id="btn-ripristina">Ripristina</button>
+      <button class="b b-fioco" id="btn-svuota-rip" hidden>Svuota</button>
+      <div class="azioni-spazio"></div>
+      <div class="stato" id="stato-rip"></div>
+    </div>
+
+    <div class="tavolo">
+      <article class="pannello dx">
+        <div class="testa">
+          <h2>Risposta ricevuta</h2>
+          <span class="sotto">contiene i segnaposto</span>
+        </div>
+        <textarea class="campo" id="ta-risposta" spellcheck="false"
+          placeholder="Incolla la risposta con i segnaposto, poi premi Ripristina."></textarea>
+        <div class="metriche" id="metriche-rip-sx">&nbsp;</div>
+      </article>
+
+      <div class="gola" aria-hidden="true">
+      </div>
+
+      <article class="pannello sx">
+        <div class="testa">
+          <h2>Ripristinato</h2>
+          <span class="sotto">i valori veri sono tornati</span>
+          <span class="coda">
+            <button class="b b-piccolo b-primario" id="btn-copia-rip" hidden>Copia</button>
+          </span>
+        </div>
+        <div class="campo" id="vista-ripristinato" hidden></div>
+        <div class="vuoto" id="vuoto-rip">Qui torneranno i valori reali.</div>
+        <div class="metriche" id="metriche-rip-dx">&nbsp;</div>
+      </article>
+    </div>
+
+    <div class="avviso" id="avviso-rip" hidden>
+      <h3 id="avviso-titolo">Segnaposto</h3>
+      <div id="avviso-corpo"></div>
+    </div>
+  </section>
+
+</main>
+
+<div class="firma-prodotto" id="firma-prodotto"><span
+  class="firma-marchio">PrivacyBridge</span> by <span
+  class="firma-autore">@Andrea Sforna</span></div>
+
+<script>
+"use strict";
+
+const RE_PH = /«[A-Za-z][A-Za-z_]*_\d+»/g;
+const TIPI_FALLBACK = ["PERSONA", "EMAIL", "TELEFONO", "IBAN", "CF", "PIVA", "CARTA",
+                       "LUOGO", "ORG", "DATA", "CAP", "URL", "IP", "SANITARIO", "ALTRO"];
+
+/* Etichette umane per i tipi interni. Il backend usa sigle brevi
+   ("CF", "PIVA", "SANITARIO") come tipo tecnico — nella UI mostriamo
+   il nome per esteso. Ogni categoria del motore deve stare qui: quello
+   che manca finisce sotto gli occhi dell'utente come sigla grezza
+   ("CRYPTO", "MAC", "PRATICA"). Lo verifica test_interfaccia.py. */
+const ETICHETTA_TIPO = {
+  "PERSONA":       "Persona",
+  "EMAIL":         "Email",
+  "TELEFONO":      "Telefono",
+  "IBAN":          "IBAN",
+  "CF":            "Codice fiscale",
+  "PIVA":          "Partita IVA",
+  "CARTA":         "Carta di credito",
+  "CAP":           "CAP",
+  "INDIRIZZO":     "Indirizzo",
+  "SANITARIO":     "Tessera sanitaria",
+  "DOCUMENTO":     "Documento d'identità",
+  "DATA_NASCITA":  "Data di nascita",
+  "LUOGO_NASCITA": "Luogo di nascita",
+  "LUOGO":         "Luogo (generico)",
+  "ORG":           "Azienda / ente",
+  "DATA":          "Data (generica)",
+  "IMPORTO":       "Importo",
+  "URL":           "Indirizzo web",
+  "IP":            "Indirizzo IP",
+  "MAC":           "Indirizzo MAC",
+  "TARGA":         "Targa auto",
+  "VIN":           "Telaio del veicolo",
+  "CATASTO":       "Riferimento catastale",
+  "SPEDIZIONE":    "Numero di spedizione",
+  "PRATICA":       "Numero di pratica",
+  "SOCIAL":        "Profilo social",
+  "CRYPTO":        "Portafoglio di criptovaluta",
+  "PERSONA_SUGGERITO": "Persona da confermare",
+  "ALTRO":         "Altro",
+};
+
+function etichettaTipo(tipo) {
+  return ETICHETTA_TIPO[tipo] || tipo || "Altro";
+}
+
+const stato = {
+  sessione: null,
+  originale: "",
+  anonimizzato: "",
+  entita: [],
+  suggeriti: [],
+  suggeritiEspansi: false,
+  tipi: TIPI_FALLBACK.slice(),
+  obsoleto: false,
+  // Pila per l'annullamento delle modifiche fatte direttamente sul testo.
+  storia: [],
+};
+
+const SUGG_LIMITE = 5;
+const TIPO_RUBRICA_INIZIALE = "PERSONA";
+
+let ripristinato = "";
+
+const $ = (id) => document.getElementById(id);
+
+/* ---------------------------------------------------------------- utility */
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function escRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+
+function nFmt(n) { return Number(n).toLocaleString("it-IT"); }
+
+function nuovoId() {
+  const b = new Uint8Array(6);
+  crypto.getRandomValues(b);
+  return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+}
+
+async function api(percorso, opzioni) {
+  let r;
+  try {
+    r = await fetch(percorso, opzioni);
+  } catch (_) {
+    throw new Error("Impossibile contattare il servizio locale. Verifica che PrivacyBridge sia in esecuzione.");
+  }
+  let dati = null;
+  try { dati = await r.json(); } catch (_) { /* risposta senza corpo JSON */ }
+  if (!r.ok) {
+    throw new Error((dati && dati.detail) || `Il servizio ha risposto con un errore (codice ${r.status}).`);
+  }
+  return dati;
+}
+
+/* ----------------------------------------------------------------- banner */
+
+function mostraErrore(msg, marca) {
+  $("banner-marca").textContent = marca || "Errore";
+  $("banner-testo").textContent = msg;
+  $("banner").hidden = false;
+}
+function nascondiErrore() { $("banner").hidden = true; }
+$("banner-chiudi").addEventListener("click", nascondiErrore);
+
+/* ------------------------------------------------------ stato lavorazione */
+
+function creaStato(elId) {
+  let timer = null;
+  const el = $(elId);
+  return {
+    lavora(msg) {
+      clearTimeout(timer);
+      timer = setTimeout(() => { el.className = "stato lavora"; el.textContent = msg; }, 300);
+    },
+    fatto(msg) {
+      clearTimeout(timer);
+      el.className = "stato fatto";
+      el.textContent = msg;
+    },
+    fioco(msg) {
+      clearTimeout(timer);
+      el.className = "stato";
+      el.textContent = msg || "";
+    },
+  };
+}
+
+const statoAnon = creaStato("stato");
+const statoRip = creaStato("stato-rip");
+
+/* ------------------------------------------------------- analisi in corso */
+
+// Il motore analizza ~2.500 caratteri al secondo: mezzo milione di
+// caratteri sono più di tre minuti, e quel tempo è per metà inferenza del
+// modello — non si toglie. Quindi va mostrato quanto manca e va potuto
+// fermare.
+const POLL_AVANZAMENTO_MS = 500;
+// Il pulsante Annulla non compare subito: su un testo breve l'analisi
+// finisce prima, e un pulsante che lampeggia per un istante è rumore.
+const ATTESA_ANNULLA_MS = 3000;
+
+function avviaAvanzamento() {
+  const btn = $("btn-annulla");
+  const av = { annullata: false, ferma: null };
+
+  btn.onclick = async () => {
+    btn.disabled = true;
+    btn.textContent = "Interruzione…";
+    av.annullata = true;
+    try {
+      await api("/analisi/annulla", { method: "POST" });
+    } catch (_) { /* se non arriva, l'analisi finisce da sé */ }
+  };
+
+  const comparsa = setTimeout(() => {
+    btn.disabled = false;
+    btn.textContent = "Annulla";
+    btn.hidden = false;
+  }, ATTESA_ANNULLA_MS);
+
+  const polling = setInterval(async () => {
+    if (av.annullata) return;
+    try {
+      const s = await api("/analisi/stato");
+      if (s && s.attivo && s.totali > 0 && s.fatti > 0) {
+        statoAnon.lavora(
+          `Analisi in corso — ${nFmt(s.fatti)} di ${nFmt(s.totali)} caratteri…`
+        );
+      }
+    } catch (_) { /* il polling non deve rompere l'analisi */ }
+  }, POLL_AVANZAMENTO_MS);
+
+  av.ferma = () => {
+    clearTimeout(comparsa);
+    clearInterval(polling);
+    btn.hidden = true;
+    btn.disabled = false;
+    btn.textContent = "Annulla";
+    btn.onclick = null;
+  };
+  return av;
+}
+
+/* ----------------------------------------------------------------- schede */
+
+function apriScheda(nome) {
+  document.querySelectorAll(".scheda").forEach((b) => {
+    b.setAttribute("aria-selected", String(b.dataset.tab === nome));
+  });
+  $("vista-anonimizza").hidden = nome !== "anonimizza";
+  $("vista-ripristina").hidden = nome !== "ripristina";
+}
+document.querySelectorAll(".scheda").forEach((b) => {
+  b.addEventListener("click", () => apriScheda(b.dataset.tab));
+});
+
+/* -------------------------------------------------------------------- tema */
+
+function applicaTema(tema) {
+  document.documentElement.setAttribute("data-theme", tema);
+  const prossimo = tema === "scuro" ? "chiaro" : "scuro";
+  const etichetta = `Passa al tema ${prossimo}`;
+  const b = $("btn-tema");
+  b.title = etichetta;
+  b.setAttribute("aria-label", etichetta);
+  try { localStorage.setItem("pb-tema", tema); } catch (e) { /* sola lettura */ }
+}
+
+$("btn-tema").addEventListener("click", () => {
+  const ora = document.documentElement.getAttribute("data-theme");
+  applicaTema(ora === "scuro" ? "chiaro" : "scuro");
+});
+
+// Allinea titolo ed etichetta al tema già scelto dallo script in <head>.
+applicaTema(document.documentElement.getAttribute("data-theme") || "chiaro");
+
+/* -------------------------------------------------------------- rendering */
+
+function rendiConSegnaposto(testo) {
+  let out = "", last = 0, m;
+  RE_PH.lastIndex = 0;
+  while ((m = RE_PH.exec(testo)) !== null) {
+    out += esc(testo.slice(last, m.index));
+    out += `<span class="segnaposto" data-ph="${esc(m[0])}" tabindex="0"` +
+           ` aria-haspopup="menu">${esc(m[0])}</span>`;
+    last = m.index + m[0].length;
+  }
+  return out + esc(testo.slice(last));
+}
+
+function rendiConValori(testo, entita) {
+  const validi = entita.filter((e) => e.valore_reale && e.valore_reale.length);
+  if (!validi.length) return esc(testo);
+  const ordinati = validi.slice().sort((a, b) => b.valore_reale.length - a.valore_reale.length);
+  const mappa = new Map();
+  ordinati.forEach((e) => { if (!mappa.has(e.valore_reale)) mappa.set(e.valore_reale, e.placeholder); });
+  const re = new RegExp(ordinati.map((e) => escRe(e.valore_reale)).join("|"), "g");
+  let out = "", last = 0, m;
+  while ((m = re.exec(testo)) !== null) {
+    if (m[0].length === 0) { re.lastIndex++; continue; }
+    out += esc(testo.slice(last, m.index));
+    out += `<mark class="valore" data-ph="${esc(mappa.get(m[0]) || "")}" tabindex="0"` +
+           ` aria-haspopup="menu">${esc(m[0])}</mark>`;
+    last = m.index + m[0].length;
+  }
+  return out + esc(testo.slice(last));
+}
+
+function rendiRipristinato(testo) {
+  let out = "", last = 0, m;
+  RE_PH.lastIndex = 0;
+  while ((m = RE_PH.exec(testo)) !== null) {
+    out += esc(testo.slice(last, m.index));
+    out += `<span class="ignoto">${esc(m[0])}</span>`;
+    last = m.index + m[0].length;
+  }
+  return out + esc(testo.slice(last));
+}
+
+/* ------------------------------------------------------------ vista testi */
+
+function modalitaModifica() {
+  $("ta-originale").hidden = false;
+  $("vista-originale").hidden = true;
+  $("btn-modifica").hidden = true;
+}
+
+function modalitaConfronto() {
+  $("ta-originale").hidden = true;
+  $("vista-originale").hidden = false;
+  $("btn-modifica").hidden = false;
+}
+
+function aggiornaPannelli() {
+  const haRisultato = stato.anonimizzato.length > 0;
+
+  $("vista-anonimizzato").hidden = !haRisultato;
+  $("vuoto-dx").hidden = haRisultato;
+  $("pannello-dx").classList.toggle("completo", haRisultato && !stato.obsoleto);
+
+  if (haRisultato) {
+    $("vista-anonimizzato").innerHTML = rendiConSegnaposto(stato.anonimizzato);
+    $("vista-originale").innerHTML = rendiConValori(stato.originale, stato.entita);
+    modalitaConfronto();
+    // I due gesti diretti non lasciano traccia sullo schermo finché non li
+    // si prova: qui c'è l'unico posto dove dirlo senza aggiungere cromo.
+    // "clicca Modifica" invece se ne va — il pulsante che nomina sta due
+    // centimetri più a destra e si spiega da solo.
+    $("sotto-sx").textContent = "valori evidenziati — seleziona per anonimizzare";
+    $("sotto-dx").textContent = "passa su un segnaposto per correggerlo";
+  } else {
+    $("vista-anonimizzato").innerHTML = "";
+    $("vista-originale").innerHTML = "";
+    modalitaModifica();
+    $("sotto-sx").textContent = "resta su questa macchina";
+    $("sotto-dx").textContent = "pronto per l'invio";
+  }
+
+  const testoSx = haRisultato ? stato.originale : $("ta-originale").value;
+  $("metriche-sx").innerHTML = testoSx ? `<b>${nFmt(testoSx.length)}</b> caratteri` : "&nbsp;";
+
+  if (haRisultato) {
+    const occorrenze = stato.entita.reduce((s, e) => s + (Number(e.occorrenze) || 0), 0);
+    $("metriche-dx").innerHTML =
+      `<b>${nFmt(stato.entita.length)} valori trattenuti</b> &middot; ` +
+      `${nFmt(occorrenze)} occorrenze &middot; ${nFmt(stato.anonimizzato.length)} caratteri`;
+  } else {
+    $("metriche-dx").innerHTML = "&nbsp;";
+  }
+
+  // Contestuali: appaiono solo quando servono.
+  $("btn-copia").hidden = !haRisultato;
+  $("btn-svuota").hidden = !($("ta-originale").value.length > 0
+                             || stato.originale.length > 0);
+  $("btn-rianonimizza").hidden = !(haRisultato && stato.obsoleto);
+}
+
+/* --------------------------------------------------------- tabella entità */
+
+function opzioniTipo(selezionato) {
+  const lista = !selezionato || stato.tipi.includes(selezionato)
+    ? stato.tipi
+    : stato.tipi.concat([selezionato]);
+  return lista
+    .map((t) => `<option value="${esc(t)}"${t === selezionato ? " selected" : ""}>${esc(etichettaTipo(t))}</option>`)
+    .join("");
+}
+
+function disegnaTabella() {
+  const tb = $("tbody");
+  tb.innerHTML = "";
+  $("tabella-vuota").hidden = stato.entita.length > 0;
+  // Mostra la colonna "Correlato a" solo se almeno una riga ne ha una.
+  const box = tb.closest(".tabella-box");
+  if (box) {
+    box.classList.toggle("vuota", stato.entita.length === 0);
+    box.classList.toggle("mostra-correlato",
+      stato.entita.some((e) => e.correlato_a));
+  }
+
+  stato.entita.forEach((e, i) => {
+    const tr = document.createElement("tr");
+    if (e.placeholder) tr.dataset.ph = e.placeholder;
+    const corr = e.correlato_a
+      ? `<span class="segnaposto" data-ph="${esc(e.correlato_a)}">${esc(e.correlato_a)}</span>`
+      : "—";
+    tr.innerHTML =
+      `<td class="c-ph"${e.placeholder ? ` title="${esc(e.placeholder)}"` : ""}>` +
+        (e.placeholder
+          ? `<span class="segnaposto" data-ph="${esc(e.placeholder)}">${esc(e.placeholder)}</span>`
+          : `<span class="attesa">assegnato alla rianonimizzazione</span>`) +
+      `</td>` +
+      `<td><input class="in-valore" type="text" value="${esc(e.valore_reale || "")}" ` +
+        `title="${esc(e.valore_reale || "")}" ` +
+        `data-i="${i}" spellcheck="false" aria-label="Valore reale, riga ${i + 1}"></td>` +
+      `<td class="c-tipo"><select class="sel-tipo" data-i="${i}" aria-label="Tipo, riga ${i + 1}">` +
+        opzioniTipo(e.tipo) + `</select></td>` +
+      `<td class="c-occ">${e.occorrenze === null || e.occorrenze === undefined ? "—" : nFmt(e.occorrenze)}</td>` +
+      `<td class="c-corr">${corr}</td>` +
+      `<td class="c-rim"><button class="b-rimuovi" data-i="${i}" aria-label="Rimuovi riga ${i + 1}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></td>`;
+    tb.appendChild(tr);
+  });
+}
+
+function segnalaObsoleto() {
+  if (!stato.anonimizzato) return;
+  stato.obsoleto = true;
+  $("pannello-dx").classList.remove("completo");
+  $("btn-rianonimizza").hidden = false;   // il primario si manifesta
+  statoAnon.fioco("Modifiche non ancora applicate — premi Rianonimizza.");
+}
+
+$("tbody").addEventListener("input", (ev) => {
+  const t = ev.target;
+  if (!t.classList.contains("in-valore")) return;
+  stato.entita[Number(t.dataset.i)].valore_reale = t.value;
+  segnalaObsoleto();
+});
+
+$("tbody").addEventListener("change", (ev) => {
+  const t = ev.target;
+  if (!t.classList.contains("sel-tipo")) return;
+  stato.entita[Number(t.dataset.i)].tipo = t.value;
+  segnalaObsoleto();
+});
+
+$("tbody").addEventListener("click", (ev) => {
+  const b = ev.target.closest(".b-rimuovi");
+  if (!b) return;
+  stato.entita.splice(Number(b.dataset.i), 1);
+  disegnaTabella();
+  segnalaObsoleto();
+});
+
+$("btn-aggiungi").addEventListener("click", () => {
+  stato.entita.push({
+    placeholder: "",
+    valore_reale: "",
+    tipo: stato.tipi[0] || "ALTRO",
+    occorrenze: null,
+  });
+  disegnaTabella();
+  const campi = $("tbody").querySelectorAll(".in-valore");
+  if (campi.length) campi[campi.length - 1].focus();
+  segnalaObsoleto();
+});
+
+/* ----------------------------------------------------- suggerimenti (livello 3) */
+
+function disegnaSuggerimenti() {
+  const box = $("tabella-suggerimenti");
+  const tb = $("tbody-suggerimenti");
+  const btnEspandi = $("btn-sugg-espandi");
+  if (!stato.suggeriti.length) {
+    box.hidden = true;
+    tb.innerHTML = "";
+    return;
+  }
+  box.hidden = false;
+  const nTotale = stato.suggeriti.length;
+  const nascosti = !stato.suggeritiEspansi && nTotale > SUGG_LIMITE;
+  btnEspandi.hidden = !nascosti;
+  btnEspandi.textContent = nascosti ? `Mostra tutti (${nTotale})` : "Mostra tutti";
+
+  tb.innerHTML = stato.suggeriti.map((e, i) => {
+    const nascosta = nascosti && i >= SUGG_LIMITE;
+    return (
+      `<tr class="${nascosta ? "nascosta" : ""}">` +
+        `<td class="c-sugg-ok"><input type="checkbox" class="chk-trattieni" data-i="${i}" aria-label="Trattieni ${esc(e.valore_reale)}"></td>` +
+        `<td class="sugg-valore" title="${esc(e.valore_reale)}">${esc(e.valore_reale)}</td>` +
+        `<td class="c-tipo"><select class="sel-sugg-tipo" data-i="${i}" aria-label="Tipo per ${esc(e.valore_reale)}">` +
+          opzioniTipo(e.tipo || "PERSONA") + `</select></td>` +
+        `<td class="c-occ">${nFmt(e.occorrenze || 0)}</td>` +
+        `<td class="c-rim"><button class="b-rimuovi b-ignora" data-i="${i}" aria-label="Ignora ${esc(e.valore_reale)}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></td>` +
+      `</tr>`
+    );
+  }).join("");
+}
+
+function promuoviSuggerimento(indice) {
+  const s = stato.suggeriti[indice];
+  if (!s) return;
+  stato.suggeriti.splice(indice, 1);
+  stato.entita.push({
+    placeholder: "",
+    valore_reale: s.valore_reale,
+    tipo: s.tipo || "PERSONA",
+    occorrenze: s.occorrenze || null,
+  });
+  disegnaTabella();
+  disegnaSuggerimenti();
+  segnalaObsoleto();
+}
+
+function ignoraSuggerimento(indice) {
+  if (indice < 0 || indice >= stato.suggeriti.length) return;
+  stato.suggeriti.splice(indice, 1);
+  disegnaSuggerimenti();
+}
+
+$("tbody-suggerimenti").addEventListener("change", (ev) => {
+  const t = ev.target;
+  if (t.classList.contains("chk-trattieni") && t.checked) {
+    promuoviSuggerimento(Number(t.dataset.i));
+  } else if (t.classList.contains("sel-sugg-tipo")) {
+    const i = Number(t.dataset.i);
+    if (stato.suggeriti[i]) stato.suggeriti[i].tipo = t.value;
+  }
+});
+
+$("tbody-suggerimenti").addEventListener("click", (ev) => {
+  const b = ev.target.closest(".b-ignora");
+  if (b) ignoraSuggerimento(Number(b.dataset.i));
+});
+
+$("btn-sugg-espandi").addEventListener("click", () => {
+  stato.suggeritiEspansi = true;
+  disegnaSuggerimenti();
+});
+
+$("btn-sugg-nascondi").addEventListener("click", () => {
+  stato.suggeriti = [];
+  disegnaSuggerimenti();
+});
+
+/* ----------------------------------------------------------- accoppiamento */
+
+// Segnaposto attualmente illuminato. Serve a non rifare niente quando il
+// puntatore continua a muoversi dentro lo stesso chip: senza la guardia
+// ogni pixel di movimento faceva due querySelectorAll sull'intero
+// documento, e su un testo con centinaia di entità si sentiva.
+let phAcceso = null;
+
+function spegni() {
+  document.querySelectorAll(".acceso").forEach((n) => n.classList.remove("acceso"));
+  $("tacca").classList.remove("visibile");
+  phAcceso = null;
+}
+
+/* Porta ``el`` dentro la parte visibile del suo pannello, ma solo se ne è
+   davvero fuori: scorrere un elemento già in vista sposterebbe il testo
+   sotto gli occhi di chi sta leggendo, senza motivo. */
+function portaInVista(el) {
+  if (!el) return;
+  const campo = el.closest(".campo");
+  if (!campo) return;
+  const r = el.getBoundingClientRect();
+  const c = campo.getBoundingClientRect();
+  if (r.top >= c.top && r.bottom <= c.bottom) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function accendi(ph, origine) {
+  if (!ph) return;
+  phAcceso = ph;
+  const sel = `[data-ph="${CSS.escape(ph)}"]`;
+  document.querySelectorAll(sel).forEach((n) => n.classList.add("acceso"));
+
+  // Il gemello sta sempre nell'altro pannello: se l'utente è a destra
+  // porto in vista quello di sinistra, e viceversa. Mai quello che sta
+  // già guardando.
+  const dentroSx = !!(origine && origine.closest("#vista-originale"));
+  const dentroDx = !!(origine && origine.closest("#vista-anonimizzato"));
+  if (dentroSx) portaInVista($("vista-anonimizzato").querySelector(sel));
+  else if (dentroDx) portaInVista($("vista-originale").querySelector(sel));
+
+  const ancora = $("vista-originale").querySelector(sel) || $("vista-anonimizzato").querySelector(sel);
+  if (!ancora) return;
+  const gola = $("gola").getBoundingClientRect();
+  const r = ancora.getBoundingClientRect();
+  const y = r.top + r.height / 2 - gola.top;
+  if (y < 0 || y > gola.height) return;
+  const tacca = $("tacca");
+  tacca.style.top = `${Math.round(y)}px`;
+  tacca.classList.add("visibile");
+}
+
+document.addEventListener("mouseover", (ev) => {
+  const n = ev.target.closest("[data-ph]");
+  const ph = n ? n.dataset.ph : null;
+  if (ph === phAcceso) return;
+  spegni();
+  if (ph) accendi(ph, n);
+});
+
+// Il fuoco da tastiera accende come il mouse: chi naviga con Tab vede la
+// stessa corrispondenza fra i due pannelli.
+document.addEventListener("focusin", (ev) => {
+  const n = ev.target.closest && ev.target.closest(".campo [data-ph]");
+  if (!n || n.dataset.ph === phAcceso) return;
+  spegni();
+  accendi(n.dataset.ph, n);
+});
+
+/* ==========================================================================
+   MODIFICA DIRETTA SUL TESTO
+   Ogni azione passa da /rianonimizza, non da una rinumerazione in
+   JavaScript: la sostituzione è pura, costa 85 ms nel caso peggiore
+   misurato (121k caratteri, 500 entità) e lascia il vault sempre
+   allineato a quello che si vede. Rifarla qui avrebbe voluto dire due
+   implementazioni della stessa regola, destinate a divergere.
+   ========================================================================== */
+
+const RITARDO_COMANDO = 250;   // 2.1: fra 200 e 300 ms
+const GRAZIA_COMANDO  = 220;   // tempo per raggiungere il menu col mouse
+
+let comandoAperto = null;      // elemento .comando visibile
+let ancoraComando = null;      // nodo del testo a cui è agganciato
+let timerApertura = null;
+let timerChiusura = null;
+
+/* ---------------------------------------------------------- annullamento */
+
+function istantanea() {
+  stato.storia.push({
+    entita: stato.entita.map((e) => ({ ...e })),
+    suggeriti: stato.suggeriti.map((e) => ({ ...e })),
+    anonimizzato: stato.anonimizzato,
+  });
+  // Oltre questa soglia la pila non serve più a nessuno e tiene in vita
+  // copie di valori reali che potremmo aver già tolto dal documento.
+  if (stato.storia.length > 40) stato.storia.shift();
+}
+
+async function annullaModifica() {
+  const p = stato.storia.pop();
+  if (!p) return false;
+  stato.entita = p.entita;
+  stato.suggeriti = p.suggeriti;
+  // La lista ripristinata porta con sé i segnaposto di prima, quindi il
+  // motore rigenera esattamente il testo precedente e il vault torna a
+  // combaciare con quello che l'utente vede.
+  await applicaModifica("Annullato");
+  return true;
+}
+
+/* ------------------------------------------------------ applica e ridisegna */
+
+async function applicaModifica(messaggio) {
+  const testo = stato.originale;
+  if (!testo) return;
+  const righe = stato.entita
+    .filter((e) => (e.valore_reale || "").trim())
+    .map((e) => ({
+      valore_reale: e.valore_reale.trim(),
+      tipo: e.tipo || "ALTRO",
+      placeholder: e.placeholder || "",
+    }));
+  chiudiComando();
+  statoAnon.lavora("Aggiornamento…");
+  try {
+    const d = await api("/rianonimizza", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ testo, sessione: stato.sessione, entita: righe }),
+    });
+    // ``correlato_a`` non viene ricalcolato da /rianonimizza. Senza
+    // riportarlo la colonna sparirebbe al primo click e la tabella si
+    // stringerebbe: uno spostamento di layout causato da un'azione che
+    // con quella colonna non c'entra niente.
+    const prima = new Map(stato.entita.map((e) => [e.valore_reale, e.correlato_a]));
+    const nuove = d.entita || [];
+    const vivi = new Set(nuove.map((e) => e.placeholder));
+    stato.entita = nuove.map((e) => {
+      const c = prima.get(e.valore_reale);
+      return c && vivi.has(c) ? { ...e, correlato_a: c } : e;
+    });
+    stato.anonimizzato = d.testo_anonimizzato;
+    stato.obsoleto = false;
+    disegnaTabella();
+    disegnaSuggerimenti();
+    aggiornaPannelli();
+    statoAnon.fatto(messaggio || "Anonimizzato");
+  } catch (e) {
+    statoAnon.fioco("");
+    mostraErrore(e.message, "Modifica non applicata");
+  }
+}
+
+/* ------------------------------------------------------------- posizionamento */
+
+function posizionaComando(menu, ancora) {
+  const r = ancora.getBoundingClientRect();
+  menu.hidden = false;
+  const m = menu.getBoundingClientRect();
+  const margine = 8;
+  let x = r.left;
+  let y = r.bottom + 6;
+  if (x + m.width > window.innerWidth - margine) {
+    x = Math.max(margine, window.innerWidth - m.width - margine);
+  }
+  // Se sotto non ci sta, va sopra l'ancora invece di uscire dalla finestra.
+  if (y + m.height > window.innerHeight - margine) {
+    y = Math.max(margine, r.top - m.height - 6);
+  }
+  menu.style.left = `${Math.round(x)}px`;
+  menu.style.top = `${Math.round(y)}px`;
+  requestAnimationFrame(() => menu.classList.add("visibile"));
+}
+
+function chiudiComando() {
+  clearTimeout(timerApertura);
+  clearTimeout(timerChiusura);
+  if (!comandoAperto) return;
+  comandoAperto.classList.remove("visibile");
+  comandoAperto.hidden = true;
+  comandoAperto.removeAttribute("data-ph");
+  comandoAperto = null;
+  ancoraComando = null;
+}
+
+function chiudiConGrazia() {
+  clearTimeout(timerChiusura);
+  timerChiusura = setTimeout(chiudiComando, GRAZIA_COMANDO);
+}
+
+/* --------------------------------------------- comando su entità esistente */
+
+function apriComandoEntita(ph, ancora) {
+  const e = stato.entita.find((x) => x.placeholder === ph);
+  if (!e) return;
+  chiudiComando();
+  const menu = $("comando-entita");
+  $("ce-valore").textContent = e.valore_reale;
+  $("ce-valore").title = e.valore_reale;
+  const occ = Number(e.occorrenze) || 0;
+  $("ce-tipo").textContent =
+    `${etichettaTipo(e.tipo)} · ${occ === 1 ? "1 occorrenza" : `${nFmt(occ)} occorrenze`}`;
+  $("ce-tipi").innerHTML = opzioniTipo(e.tipo);
+  $("ce-riga-tipi").hidden = true;
+  $("ce-cambia").setAttribute("aria-expanded", "false");
+  $("ce-riga-modifica").hidden = true;
+  $("ce-modifica").setAttribute("aria-expanded", "false");
+  $("ce-valore-input").value = e.valore_reale;
+  $("ce-esito").hidden = true;
+  menu.dataset.ph = ph;          // tiene acceso l'accoppiamento mentre è aperto
+  menu.dataset.valore = e.valore_reale;
+  comandoAperto = menu;
+  ancoraComando = ancora;
+  posizionaComando(menu, ancora);
+}
+
+$("ce-cambia").addEventListener("click", () => {
+  const riga = $("ce-riga-tipi");
+  const apri = riga.hidden;
+  riga.hidden = !apri;
+  $("ce-cambia").setAttribute("aria-expanded", apri ? "true" : "false");
+  // Le due sezioni si chiudono a vicenda: nessuno spostamento verticale
+  // fra i due input.
+  if (apri) {
+    $("ce-riga-modifica").hidden = true;
+    $("ce-modifica").setAttribute("aria-expanded", "false");
+    $("ce-tipi").focus();
+  }
+});
+
+$("ce-conferma").addEventListener("click", async () => {
+  const ph = $("comando-entita").dataset.ph;
+  const e = stato.entita.find((x) => x.placeholder === ph);
+  const nuovo = $("ce-tipi").value;
+  if (!e || !nuovo || nuovo === e.tipo) { chiudiComando(); return; }
+  istantanea();
+  e.tipo = nuovo;
+  // Il segnaposto resta nella richiesta: è il motore a rifiutarne il riuso
+  // quando il tipo non combacia più, e ad assegnare un numero nuovo.
+  await applicaModifica(`Ora è ${etichettaTipo(nuovo).toLowerCase()}`);
+});
+
+/* Modifica valore: apre un campo di testo con il valore reale catturato.
+   L'utente può accorciarlo ("Matteo Rossi nato a" → "Matteo Rossi"),
+   allungarlo, o sostituirlo con un altro tratto del testo originale.
+   Il motore rifà la sostituzione partendo dal testo originale: la parte
+   accorciata torna in chiaro nell'anonimizzato, e il ripristino resta
+   byte-identico perché il testo di partenza non è mai stato modificato. */
+$("ce-modifica").addEventListener("click", () => {
+  const riga = $("ce-riga-modifica");
+  const apri = riga.hidden;
+  riga.hidden = !apri;
+  $("ce-modifica").setAttribute("aria-expanded", apri ? "true" : "false");
+  if (apri) {
+    $("ce-riga-tipi").hidden = true;
+    $("ce-cambia").setAttribute("aria-expanded", "false");
+    const inp = $("ce-valore-input");
+    inp.focus();
+    inp.select();
+  }
+});
+
+$("ce-valore-input").addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter") {
+    ev.preventDefault();
+    $("ce-conferma-valore").click();
+  }
+});
+
+$("ce-conferma-valore").addEventListener("click", async () => {
+  const ph = $("comando-entita").dataset.ph;
+  const e = stato.entita.find((x) => x.placeholder === ph);
+  const nuovo = ($("ce-valore-input").value || "").trim();
+  if (!e) { chiudiComando(); return; }
+  if (nuovo === "" || nuovo === (e.valore_reale || "").trim()) {
+    chiudiComando();
+    return;
+  }
+  istantanea();
+  e.valore_reale = nuovo;
+  // Il segnaposto vecchio resta candidato: il motore lo riassegna se
+  // il tipo combacia, altrimenti ne assegna uno nuovo. In entrambi i
+  // casi il testo anonimizzato viene ricostruito dal testo ORIGINALE,
+  // quindi la parte accorciata torna visibile.
+  await applicaModifica("Valore aggiornato");
+});
+
+/* ------------------------------------------ comando su selezione libera */
+
+const CARATTERE_PAROLA  = /[\p{L}\p{N}_'’]/u;
+const CARATTERE_INTERNO = /[.@+\-–/:]/;
+
+/* Allarga [inizio, fine) fino ai confini di parola. I segni interni —
+   il punto di "mario.rossi", la chiocciola, il trattino di "Emilia-Romagna"
+   — valgono come parte della parola solo se hanno lettere da entrambi i
+   lati: così "Milano." non si porta dietro il punto della frase. */
+function ampliaAConfini(testo, inizio, fine) {
+  let i = inizio, f = fine;
+  while (i < f && /\s/.test(testo[i])) i++;
+  while (f > i && /\s/.test(testo[f - 1])) f--;
+  if (i >= f) return null;
+  const parola = (k) => k >= 0 && k < testo.length && CARATTERE_PAROLA.test(testo[k]);
+  const interno = (k) =>
+    k >= 0 && k < testo.length && CARATTERE_INTERNO.test(testo[k]) &&
+    parola(k - 1) && parola(k + 1);
+  while (i > 0 && (parola(i - 1) || interno(i - 1))) i--;
+  while (f < testo.length && (parola(f) || interno(f))) f++;
+  return [i, f];
+}
+
+/* Offset assoluto di (nodo, offset) dentro il testo del pannello. I nodi
+   di testo concatenati ricostruiscono l'originale carattere per carattere:
+   le marche sono elementi, non alterano il contenuto. */
+function offsetAssoluto(radice, nodo, offset) {
+  const w = document.createTreeWalker(radice, NodeFilter.SHOW_TEXT);
+  let n, tot = 0;
+  while ((n = w.nextNode())) {
+    if (n === nodo) return tot + offset;
+    tot += n.nodeValue.length;
+  }
+  return -1;
+}
+
+/* Estensione di ogni marca .valore nel pannello sinistro, in un solo
+   passaggio sull'albero: serve a sapere se la selezione tocca un'entità
+   che esiste già. */
+function marcheOriginale() {
+  const radice = $("vista-originale");
+  const w = document.createTreeWalker(radice, NodeFilter.SHOW_TEXT);
+  const fuori = [];
+  let n, tot = 0;
+  while ((n = w.nextNode())) {
+    const len = n.nodeValue.length;
+    const m = n.parentElement && n.parentElement.closest("mark.valore");
+    if (m && m.dataset.ph) fuori.push({ inizio: tot, fine: tot + len, ph: m.dataset.ph, el: m });
+    tot += len;
+  }
+  return fuori;
+}
+
+function tipoProbabile(v) {
+  const s = (v || "").trim();
+  const compatto = s.replace(/[\s.\-/]/g, "");
+  // Il segnale più forte non è una regex: è che lo stesso valore il motore
+  // l'abbia già classificato altrove, in tabella o fra i suggerimenti.
+  const noto = stato.entita.find((e) => e.valore_reale === s)
+            || stato.suggeriti.find((e) => e.valore_reale === s);
+  if (noto && noto.tipo) return noto.tipo;
+  if (/^[\w.+-]+@[\w-]+\.[\w.-]+$/.test(s)) return "EMAIL";
+  if (/^https?:\/\//i.test(s) || /^www\./i.test(s)) return "URL";
+  if (/^IT\d{2}[A-Z]\d{10}[A-Z0-9]{12}$/i.test(compatto)) return "IBAN";
+  if (/^[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]$/i.test(compatto)) return "CF";
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(s)) return "IP";
+  if (/^[A-Z]{2}\d{3}[A-Z]{2}$/i.test(compatto)) return "TARGA";
+  if (/^\d{13,19}$/.test(compatto)) return "CARTA";
+  if (/^\d{11}$/.test(compatto)) return "PIVA";
+  if (/^\d{5}$/.test(compatto)) return "CAP";
+  if (/^\+?\d{6,15}$/.test(compatto)) return "TELEFONO";
+  if (/^\d{1,2}[\s/-](?:\d{1,2}|gen|feb|mar|apr|mag|giu|lug|ago|set|ott|nov|dic)/i.test(s)) {
+    return "DATA";
+  }
+  return "PERSONA";
+}
+
+function apriComandoSelezione(valore, ancora) {
+  chiudiComando();
+  const menu = $("comando-selezione");
+  const tipo = tipoProbabile(valore);
+  const occ = valore ? stato.originale.split(valore).length - 1 : 0;
+  $("cs-valore").textContent = valore;
+  $("cs-valore").title = valore;
+  $("cs-tipi").innerHTML = opzioniTipo(tipo);
+  $("cs-tipi").value = tipo;
+  $("cs-anonimizza").textContent =
+    `Anonimizzare come ${etichettaTipo(tipo).toLowerCase()}` +
+    (occ > 1 ? ` (${occ} occorrenze)` : "");
+  menu.dataset.valore = valore;
+  comandoAperto = menu;
+  ancoraComando = ancora;
+  posizionaComando(menu, ancora);
+}
+
+$("cs-tipi").addEventListener("change", () => {
+  const valore = $("comando-selezione").dataset.valore || "";
+  const occ = valore ? stato.originale.split(valore).length - 1 : 0;
+  $("cs-anonimizza").textContent =
+    `Anonimizzare come ${etichettaTipo($("cs-tipi").value).toLowerCase()}` +
+    (occ > 1 ? ` (${occ} occorrenze)` : "");
+});
+
+$("cs-anonimizza").addEventListener("click", async () => {
+  const valore = $("comando-selezione").dataset.valore;
+  const tipo = $("cs-tipi").value || "ALTRO";
+  if (!valore) return;
+  istantanea();
+  // Se era fra i suggerimenti, la promozione lo toglie da lì: altrimenti
+  // resterebbe elencato come "da confermare" pur essendo già sostituito.
+  const s = stato.suggeriti.findIndex((x) => x.valore_reale === valore);
+  if (s >= 0) stato.suggeriti.splice(s, 1);
+  stato.entita.push({ placeholder: "", valore_reale: valore, tipo, occorrenze: null });
+  const sel = window.getSelection();
+  if (sel) sel.removeAllRanges();
+  await applicaModifica("Anonimizzato");
+});
+
+/* Legge la selezione corrente nel pannello sinistro e decide che comando
+   mostrare: se tocca un'entità già riconosciuta si propone di modificarla,
+   altrimenti di anonimizzarla. */
+function valutaSelezione() {
+  const radice = $("vista-originale");
+  if (!radice || radice.hidden || !stato.originale) return;
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+  const r = sel.getRangeAt(0);
+  if (!radice.contains(r.startContainer) || !radice.contains(r.endContainer)) return;
+
+  let a = offsetAssoluto(radice, r.startContainer, r.startOffset);
+  let b = offsetAssoluto(radice, r.endContainer, r.endOffset);
+  if (a < 0 || b < 0) return;
+  if (a > b) { const t = a; a = b; b = t; }
+
+  const conf = ampliaAConfini(stato.originale, a, b);
+  if (!conf) return;
+  const [inizio, fine] = conf;
+  const valore = stato.originale.slice(inizio, fine);
+  if (!valore.trim()) return;
+
+  const toccata = marcheOriginale().find((m) => m.inizio < fine && m.fine > inizio);
+  if (toccata) {
+    apriComandoEntita(toccata.ph, toccata.el);
+    return;
+  }
+  // L'ancora è un rettangolo della selezione, non un nodo: il menu deve
+  // uscire da dove sta il testo scelto.
+  apriComandoSelezione(valore, { getBoundingClientRect: () => r.getBoundingClientRect() });
+}
+
+$("vista-originale").addEventListener("mouseup", () => setTimeout(valutaSelezione, 0));
+$("vista-originale").addEventListener("keyup", (ev) => {
+  if (ev.shiftKey || ev.key === "Shift") setTimeout(valutaSelezione, 0);
+});
+
+/* ------------------------------------------------ apertura da mouse e tastiera */
+
+function ancoraNelTesto(nodo) {
+  return nodo && nodo.closest
+    ? nodo.closest("#vista-anonimizzato [data-ph], #vista-originale [data-ph]")
+    : null;
+}
+
+document.addEventListener("mouseover", (ev) => {
+  const dentroMenu = ev.target.closest(".comando");
+  if (dentroMenu) { clearTimeout(timerChiusura); return; }
+  const n = ancoraNelTesto(ev.target);
+  clearTimeout(timerApertura);
+  if (!n || !n.dataset.ph) { if (comandoAperto) chiudiConGrazia(); return; }
+  if (comandoAperto && ancoraComando === n) { clearTimeout(timerChiusura); return; }
+  timerApertura = setTimeout(() => apriComandoEntita(n.dataset.ph, n), RITARDO_COMANDO);
+});
+
+document.addEventListener("mouseout", (ev) => {
+  if (ev.target.closest(".comando") || ancoraNelTesto(ev.target)) {
+    const verso = ev.relatedTarget;
+    if (verso && (verso.closest(".comando") || ancoraNelTesto(verso))) return;
+    clearTimeout(timerApertura);
+    chiudiConGrazia();
+  }
+});
+
+// Tab porta da un'entità all'altra, Invio apre il comando: la modifica
+// diretta si fa anche senza mouse.
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && comandoAperto) {
+    const a = ancoraComando;
+    chiudiComando();
+    if (a && a.focus) a.focus();
+    return;
+  }
+  if (ev.key !== "Enter" && ev.key !== " ") return;
+  const n = ancoraNelTesto(ev.target);
+  if (!n || !n.dataset.ph) return;
+  ev.preventDefault();
+  apriComandoEntita(n.dataset.ph, n);
+});
+
+// Cmd+Z / Ctrl+Z. Dentro un campo di testo l'annullamento è quello del
+// campo: intercettarlo lì farebbe perdere all'utente ciò che stava
+// scrivendo.
+document.addEventListener("keydown", (ev) => {
+  const k = (ev.key || "").toLowerCase();
+  if (k !== "z" || !(ev.metaKey || ev.ctrlKey) || ev.shiftKey) return;
+  const t = ev.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+  if (!stato.storia.length) return;
+  ev.preventDefault();
+  annullaModifica();
+});
+
+// Un menu ancorato a coordinate fisse non può restare aperto mentre il
+// testo sotto scorre: si staccherebbe dal punto a cui si riferisce.
+for (const id of ["vista-originale", "vista-anonimizzato"]) {
+  $(id).addEventListener("scroll", chiudiComando, { passive: true });
+}
+document.addEventListener("mousedown", (ev) => {
+  if (comandoAperto && !ev.target.closest(".comando") && !ancoraNelTesto(ev.target)) {
+    chiudiComando();
+  }
+});
+window.addEventListener("resize", chiudiComando);
+
+/* --------------------------------------------------------------- sessioni */
+
+async function caricaTipi() {
+  try {
+    const d = await api("/tipi");
+    if (d && Array.isArray(d.tipi) && d.tipi.length) {
+      stato.tipi = d.tipi.includes("ALTRO") ? d.tipi.slice() : d.tipi.concat(["ALTRO"]);
+    }
+  } catch (_) { /* resta il fallback */ }
+}
+
+async function caricaSessioni(selezione) {
+  let elenco = [];
+  try {
+    const d = await api("/sessioni");
+    elenco = (d && d.sessioni) || [];
+  } catch (e) {
+    mostraErrore(e.message);
+  }
+  const attiva = selezione || stato.sessione;
+  if (attiva && !elenco.some((s) => s.id === attiva)) {
+    elenco = [{ id: attiva, entita: 0 }].concat(elenco);
+  }
+  const sel = $("sel-sessione");
+  sel.innerHTML = elenco
+    .map((s) => `<option value="${esc(s.id)}">${esc(s.id)} · ${nFmt(s.entita || 0)} entità</option>`)
+    .join("");
+  if (attiva) sel.value = attiva;
+  stato.sessione = sel.value || attiva || null;
+}
+
+function azzeraLavoro() {
+  stato.originale = "";
+  stato.anonimizzato = "";
+  stato.entita = [];
+  stato.suggeriti = [];
+  stato.suggeritiEspansi = false;
+  stato.obsoleto = false;
+  // La pila di annullamento contiene valori reali: se ne va col resto.
+  stato.storia = [];
+  chiudiComando();
+  $("ta-originale").value = "";
+}
+
+/* Separa suggeriti dalla lista entità che arriva dal backend. */
+function assorbiEntita(listaBackend) {
+  const entita = [];
+  const suggeriti = [];
+  for (const e of listaBackend || []) {
+    if (e && e.suggerito === true) {
+      suggeriti.push(e);
+    } else {
+      entita.push(e);
+    }
+  }
+  // Ordina i suggeriti per occorrenze desc, poi valore alfabetico.
+  suggeriti.sort((a, b) =>
+    (b.occorrenze || 0) - (a.occorrenze || 0) ||
+    (a.valore_reale || "").localeCompare(b.valore_reale || "")
+  );
+  stato.entita = entita;
+  stato.suggeriti = suggeriti;
+}
+
+async function apriSessione(id) {
+  // Cambio sessione = ripulita completa della vista.
+  //
+  // Regola di coerenza (BUG 2): la tabella entità riflette SEMPRE il
+  // testo che si vede nei pannelli. Se i pannelli sono vuoti (perché
+  // abbiamo appena aperto/cambiato una sessione), la tabella è vuota
+  // pure. Le entità restano salvate nel vault e sono usabili in
+  // Ripristina, ma non compaiono qui finché l'utente non incolla un
+  // testo e preme Anonimizza.
+  stato.sessione = id;
+  azzeraLavoro();
+  disegnaTabella();
+  disegnaSuggerimenti();
+  aggiornaPannelli();
+  statoAnon.fioco("");
+}
+
+$("sel-sessione").addEventListener("change", (ev) => apriSessione(ev.target.value));
+
+$("btn-nuova").addEventListener("click", async () => {
+  nascondiErrore();
+  azzeraLavoro();
+  disegnaTabella();
+  disegnaSuggerimenti();
+  aggiornaPannelli();
+  await caricaSessioni(nuovoId());
+  statoAnon.fioco("Nuova sessione pronta.");
+});
+
+$("btn-elimina").addEventListener("click", async () => {
+  if (!stato.sessione) return;
+  const ok = confirm(
+    `Eliminare la sessione ${stato.sessione}?\n\n` +
+    "I valori reali trattenuti vengono cancellati: non sarà più possibile " +
+    "ripristinare i testi anonimizzati con questa sessione."
+  );
+  if (!ok) return;
+  try {
+    await api(`/sessioni/${encodeURIComponent(stato.sessione)}`, { method: "DELETE" });
+  } catch (e) {
+    mostraErrore(e.message, "Eliminazione non riuscita");
+    return;
+  }
+  azzeraLavoro();
+  stato.sessione = null;
+  disegnaTabella();
+  disegnaSuggerimenti();
+  aggiornaPannelli();
+  await caricaSessioni(nuovoId());
+  statoAnon.fioco("Sessione eliminata.");
+});
+
+/* ---------------------------------------------------------- menu "Altro" */
+
+function chiudiMenu() {
+  $("menu").hidden = true;
+  $("btn-menu").setAttribute("aria-expanded", "false");
+}
+function apriMenu() {
+  $("menu").hidden = false;
+  $("btn-menu").setAttribute("aria-expanded", "true");
+}
+$("btn-menu").addEventListener("click", (ev) => {
+  ev.stopPropagation();
+  $("menu").hidden ? apriMenu() : chiudiMenu();
+});
+document.addEventListener("click", (ev) => {
+  if ($("menu").hidden) return;
+  if (!$("menu").contains(ev.target) && !$("btn-menu").contains(ev.target)) {
+    chiudiMenu();
+  }
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && !$("menu").hidden) chiudiMenu();
+});
+/* Ogni voce di menu che apre un dialog o esegue un'azione chiude
+   contestualmente il menu (evita di lasciarlo aperto sopra il velo). */
+for (const id of ["btn-nuova", "btn-elimina", "btn-categorie",
+                  "btn-rubrica", "btn-vault", "btn-info"]) {
+  $(id).addEventListener("click", chiudiMenu, true);
+}
+$("sel-sessione").addEventListener("change", chiudiMenu);
+
+/* ------------------------------------------------------------ caricamento */
+
+$("btn-carica").addEventListener("click", () => $("file").click());
+
+$("file").addEventListener("change", async (ev) => {
+  const f = ev.target.files && ev.target.files[0];
+  ev.target.value = "";
+  if (!f) return;
+  nascondiErrore();
+  statoAnon.lavora(`Lettura di ${f.name}…`);
+  const fd = new FormData();
+  fd.append("file", f);
+  // Polling dell'avanzamento OCR: se il PDF è scansionato l'estrazione
+  // può durare decine di secondi — mostriamo "pagina X di Y".
+  const pollOcr = setInterval(async () => {
+    try {
+      const s = await api("/ocr/stato");
+      if (s.attivo && s.totale > 0) {
+        statoAnon.lavora(`Documento scansionato: OCR pagina ${s.pagina} di ${s.totale}…`);
+      }
+    } catch (_) { /* silenzioso: il polling non deve rompere il caricamento */ }
+  }, 600);
+  try {
+    const d = await api("/carica", { method: "POST", body: fd });
+    stato.anonimizzato = "";
+    stato.originale = "";
+    stato.obsoleto = false;
+    $("ta-originale").value = d.testo || "";
+    aggiornaPannelli();
+    if (d.ocr && d.ocr.ocr_pagine && d.ocr.ocr_pagine.length) {
+      const n = d.ocr.ocr_pagine.length;
+      statoAnon.fioco(`${d.nome} caricato — ${nFmt(d.caratteri)} caratteri.`);
+      mostraErrore(
+        `${n === d.ocr.ocr_totale ? "Tutte le" : n} pagin${n === 1 ? "a" : "e"} su ` +
+        `${d.ocr.ocr_totale} ${n === 1 ? "è stata letta" : "sono state lette"} con l'OCR ` +
+        `di sistema. Su un documento scansionato il rilevamento è meno affidabile: ` +
+        `l'OCR può sbagliare caratteri (un codice fiscale letto male non supera più ` +
+        `il controllo di validità). Controlla la tabella entità riga per riga prima di copiare.`,
+        "Documento scansionato"
+      );
+    } else {
+      statoAnon.fioco(`${d.nome} caricato — ${nFmt(d.caratteri)} caratteri.`);
+    }
+  } catch (e) {
+    statoAnon.fioco("");
+    mostraErrore(e.message, "File non leggibile");
+  } finally {
+    clearInterval(pollOcr);
+  }
+});
+
+/* ------------------------------------------------------------- anonimizza */
+
+$("ta-originale").addEventListener("input", () => {
+  if (stato.anonimizzato) {
+    stato.obsoleto = true;
+    $("pannello-dx").classList.remove("completo");
+    $("btn-rianonimizza").hidden = false;
+  }
+  const n = $("ta-originale").value.length;
+  $("metriche-sx").innerHTML = n ? `${nFmt(n)} caratteri` : "&nbsp;";
+  // La textarea sorgente pilota la visibilità di Svuota.
+  $("btn-svuota").hidden = n === 0 && !stato.originale.length;
+});
+
+$("btn-modifica").addEventListener("click", () => {
+  $("ta-originale").value = stato.originale;
+  modalitaModifica();
+  $("ta-originale").focus();
+});
+
+/* A11y-4: quando il pulsante Modifica appare dopo l'anonimizzazione,
+   spostiamo il focus dal bottone che l'utente ha appena premuto verso
+   il nuovo controllo, così screen reader e utenti da tastiera lo
+   scoprono. Solo se il focus è ancora sul bottone Anonimizza (evitiamo
+   di rubare focus se l'utente si è già spostato altrove). */
+function focoBtnModificaSeAppropriato() {
+  const modifica = $("btn-modifica");
+  if (modifica.hidden) return;
+  const attivo = document.activeElement;
+  if (attivo && attivo.id === "btn-anonimizza") {
+    modifica.focus();
+  }
+}
+
+$("btn-anonimizza").addEventListener("click", async () => {
+  const testo = $("ta-originale").hidden ? stato.originale : $("ta-originale").value;
+  if (!testo.trim()) {
+    mostraErrore("Non c'è nessun testo da anonimizzare. Incolla o carica un documento.", "Testo vuoto");
+    modalitaModifica();
+    return;
+  }
+  nascondiErrore();
+  $("btn-anonimizza").disabled = true;
+  statoAnon.lavora("Analisi in corso — nomi, codici e recapiti vengono individuati…");
+  const av = avviaAvanzamento();
+  try {
+    const d = await api("/anonimizza", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        testo,
+        sessione: stato.sessione,
+        lingua: $("sel-lingua").value,
+      }),
+    });
+    stato.originale = testo;
+    stato.anonimizzato = d.testo_anonimizzato;
+    assorbiEntita(d.entita);
+    stato.sessione = d.sessione;
+    stato.obsoleto = false;
+    // Un'analisi nuova ridisegna tutto: annullare verso lo stato di prima
+    // riporterebbe segnaposto che non appartengono più a questo testo.
+    stato.storia = [];
+    disegnaTabella();
+    disegnaSuggerimenti();
+    aggiornaPannelli();
+    statoAnon.fatto("Anonimizzato");
+    focoBtnModificaSeAppropriato();
+    await caricaSessioni(d.sessione);
+  } catch (e) {
+    if (av.annullata) {
+      // Esito richiesto, non guasto: il testo originale è ancora lì e
+      // nel vault non è rimasto niente a metà.
+      statoAnon.fioco("Analisi annullata. Il testo originale è intatto.");
+    } else {
+      statoAnon.fioco("");
+      mostraErrore(e.message, "Anonimizzazione non riuscita");
+    }
+  } finally {
+    av.ferma();
+    $("btn-anonimizza").disabled = false;
+  }
+});
+
+$("btn-rianonimizza").addEventListener("click", async () => {
+  const testo = stato.originale || $("ta-originale").value;
+  if (!testo.trim()) {
+    mostraErrore("Serve il testo originale per rianonimizzare. Incolla o carica un documento.", "Testo vuoto");
+    return;
+  }
+  const righe = stato.entita
+    .filter((e) => (e.valore_reale || "").trim())
+    .map((e) => ({
+      valore_reale: e.valore_reale.trim(),
+      tipo: e.tipo || "ALTRO",
+      placeholder: e.placeholder || "",
+    }));
+  if (!righe.length) {
+    mostraErrore("La tabella è vuota: aggiungi almeno un valore da trattenere.", "Nessuna entità");
+    return;
+  }
+  nascondiErrore();
+  $("btn-rianonimizza").disabled = true;
+  statoAnon.lavora("Riapplicazione della mappatura corretta…");
+  try {
+    const d = await api("/rianonimizza", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ testo, sessione: stato.sessione, entita: righe }),
+    });
+    stato.originale = testo;
+    stato.anonimizzato = d.testo_anonimizzato;
+    assorbiEntita(d.entita);
+    stato.obsoleto = false;
+    disegnaTabella();
+    disegnaSuggerimenti();
+    aggiornaPannelli();
+    statoAnon.fatto("Anonimizzato");
+    const mancanti = stato.entita.filter((e) => !e.occorrenze).length;
+    if (mancanti) {
+      mostraErrore(
+        mancanti === 1
+          ? "Un valore non compare nel testo originale: controlla che sia scritto esattamente come nel documento."
+          : `${mancanti} valori non compaiono nel testo originale: controlla che siano scritti esattamente come nel documento.`,
+        "Da verificare"
+      );
+    }
+    await caricaSessioni(stato.sessione);
+  } catch (e) {
+    statoAnon.fioco("");
+    mostraErrore(e.message, "Rianonimizzazione non riuscita");
+  } finally {
+    $("btn-rianonimizza").disabled = false;
+  }
+});
+
+$("btn-svuota").addEventListener("click", () => {
+  azzeraLavoro();
+  disegnaTabella();
+  disegnaSuggerimenti();
+  aggiornaPannelli();
+  statoAnon.fioco("");
+  nascondiErrore();
+});
+
+async function copia(testo, bottone, etichetta) {
+  try {
+    await navigator.clipboard.writeText(testo);
+    const prima = bottone.textContent;
+    bottone.textContent = "Copiato";
+    setTimeout(() => { bottone.textContent = prima; }, 1200);
+  } catch (_) {
+    mostraErrore(`Copia non riuscita. Seleziona il testo ${etichetta} e usa Cmd+C.`, "Appunti");
+  }
+}
+
+/* --------------------- verifica pre-copia (FASE 5-bis) ------------------- */
+/* Scan del testo che sta per uscire: se contiene pattern che assomigliano
+   a dati personali NON sostituiti da un segnaposto, mostro l'elenco e
+   chiedo conferma. Cerco solo pattern con euristica solida:
+   email, codice fiscale IT, IBAN IT, carte di credito, sequenze di 10+
+   cifre (telefoni/altri codici lunghi). NON cerco nomi propri via regex
+   perché la percentuale di falsi positivi sarebbe intollerabile. */
+
+const PATTERN_RESIDUI = [
+  { nome: "email", re: /[\w.+-]+@[\w-]+\.[\w.-]+/g },
+  { nome: "codice fiscale", re: /\b[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]\b/g },
+  { nome: "IBAN italiano", re: /\bIT\d{2}[A-Z]\d{10}[A-Z0-9]{12}\b/g },
+  { nome: "carta di credito", re: /\b(?:\d[ -]?){13,19}\b/g },
+  { nome: "numero lungo", re: /\b\d{10,}\b/g },
+];
+
+function verificaResidui(testo) {
+  // Rimuovi i segnaposto (i loro contenuti sono legittimi): sostituisci
+  // «TIPO_N» con uno spazio per evitare che spezzi/formi altri pattern.
+  const senzaPh = testo.replace(RE_PH, " ");
+  const trovati = new Map();
+  for (const p of PATTERN_RESIDUI) {
+    p.re.lastIndex = 0;
+    let m;
+    while ((m = p.re.exec(senzaPh)) !== null) {
+      if (m[0].length === 0) { p.re.lastIndex++; continue; }
+      // dedup: prima occorrenza vince, memorizzo l'etichetta.
+      if (!trovati.has(m[0])) trovati.set(m[0], p.nome);
+    }
+  }
+  return Array.from(trovati, ([val, nome]) => ({ val, nome }));
+}
+
+function confermaCopia(residui) {
+  const elenco = residui.map((r) => `• ${r.val}  (sembra ${r.nome})`).join("\n");
+  const messaggio =
+    "Il testo che stai per copiare contiene " +
+    (residui.length === 1 ? "un elemento che sembra un dato personale" : `${residui.length} elementi che sembrano dati personali`) +
+    " NON anonimizzato:\n\n" + elenco +
+    "\n\nSono i pattern che il motore di riconoscimento non ha catturato. " +
+    "Aggiungili nella tabella Entità (o alla Rubrica) prima di copiare, " +
+    "oppure procedi comunque se sono innocui.\n\nCopiare comunque?";
+  return confirm(messaggio);
+}
+
+async function copiaConVerifica(testo, bottone, etichetta) {
+  const residui = verificaResidui(testo);
+  if (residui.length && !confermaCopia(residui)) return;
+  await copia(testo, bottone, etichetta);
+}
+
+$("btn-copia").addEventListener("click", (ev) => copiaConVerifica(stato.anonimizzato, ev.currentTarget, "anonimizzato"));
+
+/* ------------------------------------------------------------- ripristina */
+
+$("ta-risposta").addEventListener("input", () => {
+  const n = $("ta-risposta").value.length;
+  $("metriche-rip-sx").innerHTML = n ? `${nFmt(n)} caratteri` : "&nbsp;";
+});
+
+$("btn-ripristina").addEventListener("click", async () => {
+  const testo = $("ta-risposta").value;
+  if (!testo.trim()) {
+    mostraErrore("Incolla la risposta ricevuta prima di ripristinare.", "Testo vuoto");
+    return;
+  }
+  if (!stato.sessione) {
+    mostraErrore("Scegli la sessione con cui il testo era stato anonimizzato.", "Sessione mancante");
+    return;
+  }
+  nascondiErrore();
+  $("avviso-rip").hidden = true;
+  $("btn-ripristina").disabled = true;
+  statoRip.lavora("Ripristino dei valori trattenuti…");
+  try {
+    const d = await api("/deanonimizza", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ testo, sessione: stato.sessione }),
+    });
+    ripristinato = d.testo_ripristinato || "";
+    const rep = d.report || {};
+    const sconosciuti = rep.warning || [];
+    const nonTrovati = rep.non_trovati || [];
+
+    $("vista-ripristinato").innerHTML = rendiRipristinato(ripristinato);
+    $("vista-ripristinato").hidden = false;
+    $("vuoto-rip").hidden = true;
+    $("metriche-rip-dx").innerHTML =
+      `<b>${nFmt((rep.ripristinati || []).length)} valori restituiti</b> &middot; ` +
+      `${nFmt(ripristinato.length)} caratteri`;
+    $("btn-copia-rip").hidden = !ripristinato;
+    $("btn-svuota-rip").hidden = false;
+    statoRip.fatto("Ripristinato");
+
+    let corpo = "";
+    if (sconosciuti.length) {
+      corpo +=
+        "<p>Questi segnaposto compaiono nel testo ma non appartengono a questa sessione. " +
+        "Sono stati lasciati come sono: verifica di aver scelto la sessione giusta.</p><ul>" +
+        sconosciuti.map((p) => `<li><code>${esc(p)}</code></li>`).join("") + "</ul>";
+    }
+    if (nonTrovati.length) {
+      corpo +=
+        "<p>Questi valori erano stati trattenuti ma non compaiono nella risposta. " +
+        "È normale se l'assistente non li ha ripetuti tutti.</p><ul>" +
+        nonTrovati.map((p) => `<li><code>${esc(p)}</code></li>`).join("") + "</ul>";
+    }
+    if (corpo) {
+      $("avviso-titolo").textContent = sconosciuti.length
+        ? "Segnaposto non riconosciuti"
+        : "Segnaposto non presenti nella risposta";
+      $("avviso-corpo").innerHTML = corpo;
+      $("avviso-rip").hidden = false;
+    }
+  } catch (e) {
+    statoRip.fioco("");
+    mostraErrore(e.message, "Ripristino non riuscito");
+  } finally {
+    $("btn-ripristina").disabled = false;
+  }
+});
+
+$("btn-copia-rip").addEventListener("click", (ev) => copia(ripristinato, ev.currentTarget, "ripristinato"));
+
+$("btn-svuota-rip").addEventListener("click", () => {
+  ripristinato = "";
+  $("ta-risposta").value = "";
+  $("vista-ripristinato").innerHTML = "";
+  $("vista-ripristinato").hidden = true;
+  $("vuoto-rip").hidden = false;
+  $("metriche-rip-sx").innerHTML = "&nbsp;";
+  $("metriche-rip-dx").innerHTML = "&nbsp;";
+  $("avviso-rip").hidden = true;
+  $("btn-copia-rip").hidden = true;
+  $("btn-svuota-rip").hidden = true;
+  statoRip.fioco("");
+  nascondiErrore();
+});
+
+/* La textarea di risposta pilota anche la visibilità di Svuota. */
+$("ta-risposta").addEventListener("input", () => {
+  $("btn-svuota-rip").hidden = $("ta-risposta").value.length === 0
+                               && !ripristinato;
+});
+
+/* --------------------- focus trap generico per i dialog (A11y-1) --------- */
+/* Impedisce a Tab/Shift+Tab di uscire dal dialog attivo. Il dialog è
+   individuato dal `role="dialog"` con `aria-modal="true"` e attributo
+   `hidden` assente. Attivo un solo dialog per volta (nel nostro
+   caso è sempre così). */
+
+const FOCUSABILI_SEL =
+  'button:not([disabled]), input:not([disabled]), select:not([disabled]), ' +
+  'textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
+
+function dialogAttivo() {
+  const dialogs = document.querySelectorAll('[role="dialog"][aria-modal="true"]:not([hidden])');
+  return dialogs.length ? dialogs[dialogs.length - 1] : null;
+}
+
+document.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Tab") return;
+  const dlg = dialogAttivo();
+  if (!dlg) return;
+  const focusabili = Array.from(dlg.querySelectorAll(FOCUSABILI_SEL))
+    .filter((el) => el.offsetParent !== null);   // visibili
+  if (!focusabili.length) return;
+  const primo = focusabili[0];
+  const ultimo = focusabili[focusabili.length - 1];
+  const attivo = document.activeElement;
+  if (ev.shiftKey) {
+    if (attivo === primo || !dlg.contains(attivo)) {
+      ev.preventDefault();
+      ultimo.focus();
+    }
+  } else {
+    if (attivo === ultimo || !dlg.contains(attivo)) {
+      ev.preventDefault();
+      primo.focus();
+    }
+  }
+});
+
+/* ---------------------------------------------------------- informazioni */
+
+const veloInfo = $("velo-info");
+
+async function caricaVersione() {
+  try {
+    const d = await api("/health");
+    $("info-versione").textContent =
+      d && d.versione ? `Versione ${d.versione}` : "Versione non disponibile";
+  } catch (_) {
+    $("info-versione").textContent = "Versione non disponibile";
+  }
+}
+
+function apriInfo() {
+  caricaVersione();
+  veloInfo.hidden = false;
+  veloInfo.classList.add("aperto");
+  $("btn-info-chiudi").focus();
+}
+function chiudiInfo() {
+  veloInfo.classList.remove("aperto");
+  veloInfo.hidden = true;
+}
+$("btn-info").addEventListener("click", apriInfo);
+$("btn-info-chiudi").addEventListener("click", chiudiInfo);
+veloInfo.addEventListener("click", (ev) => { if (ev.target === veloInfo) chiudiInfo(); });
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && !veloInfo.hidden) chiudiInfo();
+});
+
+/* --------------------------------------------------------------- categorie */
+
+const veloCategorie = $("velo-categorie");
+let statoCategorie = null;   // {tutte, attive, default_attive}
+
+/* Preset di categorie (FASE 5.4c). Ogni preset è un set di categorie
+   attive. "Personalizzato" non è un preset: appare come indicatore
+   quando la selezione non combacia con nessuno. */
+const CAT_PRESET = [
+  {
+    id: "tecnico",
+    nome: "Documento tecnico",
+    // Solo dati personali diretti (uguale al default del backend).
+    extra: [],
+  },
+  {
+    id: "personale",
+    nome: "Messaggio personale",
+    // Aggiunge luogo generico e data (utile per messaggi).
+    extra: ["LUOGO", "DATA"],
+  },
+  {
+    id: "contratto",
+    nome: "Contratto",
+    // Aggiunge ORG, IMPORTO, DATA (utile per contratti/accordi).
+    extra: ["ORG", "IMPORTO", "DATA"],
+  },
+];
+
+function presetSet(preset) {
+  const base = new Set(statoCategorie ? statoCategorie.default_attive : []);
+  for (const t of preset.extra) base.add(t);
+  return base;
+}
+
+function presetAttivo() {
+  if (!statoCategorie) return null;
+  const attive = new Set(statoCategorie.attive);
+  for (const p of CAT_PRESET) {
+    const atteso = presetSet(p);
+    if (attive.size === atteso.size && [...attive].every((t) => atteso.has(t))) {
+      return p.id;
+    }
+  }
+  return null;   // = personalizzato
+}
+
+function disegnaPreset() {
+  const attivo = presetAttivo();
+  $("cat-preset").innerHTML = CAT_PRESET.map((p) => {
+    const on = p.id === attivo ? " attivo" : "";
+    return `<button type="button" class="preset${on}" data-preset="${p.id}">${esc(p.nome)}</button>`;
+  }).join("") +
+    (attivo === null
+      ? `<span class="preset preset-stato" aria-live="polite">Personalizzato</span>`
+      : "");
+}
+
+async function caricaCategorie() {
+  $("cat-lista").innerHTML =
+    `<div class="tabella-vuota">Caricamento delle categorie…</div>`;
+  try {
+    const d = await api("/categorie");
+    statoCategorie = d;
+    disegnaCategorie();
+    disegnaPreset();
+  } catch (e) {
+    $("cat-lista").innerHTML =
+      `<div class="tabella-vuota">Errore: ${esc(e.message)}</div>`;
+  }
+}
+
+function disegnaCategorie() {
+  if (!statoCategorie) return;
+  const attive = new Set(statoCategorie.attive);
+  // Ordina per etichetta umana per rendere il dialog più leggibile.
+  const tipi = statoCategorie.tutte
+    .filter((t) => t !== "PERSONA_SUGGERITO")
+    .slice()
+    .sort((a, b) => etichettaTipo(a).localeCompare(etichettaTipo(b), "it"));
+  $("cat-lista").innerHTML = tipi
+    .map((t) => {
+      const on = attive.has(t) ? "checked" : "";
+      return `<label><input type="checkbox" data-cat="${esc(t)}" ${on}>${esc(etichettaTipo(t))}</label>`;
+    })
+    .join("");
+  $("cat-conteggio").textContent = `${attive.size} attive`;
+}
+
+async function salvaCategorie() {
+  const attive = Array.from(
+    $("cat-lista").querySelectorAll("input:checked"),
+    (i) => i.dataset.cat
+  );
+  try {
+    const d = await api("/categorie", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ attive }),
+    });
+    statoCategorie.attive = d.attive;
+    $("cat-conteggio").textContent = `${d.attive.length} attive`;
+    disegnaPreset();
+  } catch (e) {
+    mostraErrore(e.message, "Categorie");
+  }
+}
+
+async function applicaPreset(id) {
+  const p = CAT_PRESET.find((x) => x.id === id);
+  if (!p || !statoCategorie) return;
+  const nuove = [...presetSet(p)].filter((t) => statoCategorie.tutte.includes(t));
+  statoCategorie.attive = nuove;
+  disegnaCategorie();
+  disegnaPreset();
+  try {
+    const d = await api("/categorie", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ attive: nuove }),
+    });
+    statoCategorie.attive = d.attive;
+    $("cat-conteggio").textContent = `${d.attive.length} attive`;
+    disegnaPreset();
+  } catch (e) {
+    mostraErrore(e.message, "Preset categorie");
+  }
+}
+
+document.addEventListener("click", (ev) => {
+  const b = ev.target.closest(".cat-preset .preset");
+  if (b && b.dataset.preset) applicaPreset(b.dataset.preset);
+});
+
+function apriCategorie() {
+  caricaCategorie();
+  veloCategorie.hidden = false;
+  veloCategorie.classList.add("aperto");
+  $("btn-cat-chiudi").focus();
+}
+function chiudiCategorie() {
+  veloCategorie.classList.remove("aperto");
+  veloCategorie.hidden = true;
+}
+$("btn-categorie").addEventListener("click", apriCategorie);
+$("btn-cat-chiudi").addEventListener("click", chiudiCategorie);
+veloCategorie.addEventListener("click", (ev) => {
+  if (ev.target === veloCategorie) chiudiCategorie();
+});
+$("cat-lista").addEventListener("change", (ev) => {
+  if (ev.target && ev.target.type === "checkbox") salvaCategorie();
+});
+$("btn-cat-default").addEventListener("click", async () => {
+  if (!statoCategorie) return;
+  statoCategorie.attive = statoCategorie.default_attive.slice();
+  disegnaCategorie();
+  await salvaCategorie();
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && !veloCategorie.hidden) chiudiCategorie();
+});
+
+/* ---------------------------------------------------------------- rubrica */
+
+const veloRubrica = $("velo-rubrica");
+
+function popolaTipiRub() {
+  const sel = $("rub-tipo");
+  sel.innerHTML = stato.tipi
+    .map((t) => `<option value="${esc(t)}">${esc(etichettaTipo(t))}</option>`)
+    .join("");
+  // Chi apre la rubrica sta quasi sempre aggiungendo il nome di una
+  // persona: partire dalla prima voce in ordine alfabetico non aiuta.
+  if (stato.tipi.includes(TIPO_RUBRICA_INIZIALE)) sel.value = TIPO_RUBRICA_INIZIALE;
+}
+
+async function caricaRubrica() {
+  const el = $("rub-elenco");
+  try {
+    const d = await api("/rubrica");
+    const voci = (d && d.voci) || [];
+    $("rub-conteggio").textContent = `${voci.length} voci`;
+    if (!voci.length) {
+      el.innerHTML = `<div class="tabella-vuota">Nessuna voce. Aggiungi manualmente o importa un CSV.</div>`;
+      return;
+    }
+    el.innerHTML =
+      "<table><tbody>" +
+      voci.map((v) =>
+        `<tr>` +
+          `<td>${esc(v.testo)}</td>` +
+          `<td>${esc(etichettaTipo(v.tipo))}</td>` +
+          `<td><button class="b-rimuovi" data-testo="${esc(v.testo)}" aria-label="Rimuovi ${esc(v.testo)}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></td>` +
+        `</tr>`
+      ).join("") +
+      "</tbody></table>";
+  } catch (e) {
+    el.innerHTML = `<div class="tabella-vuota">Errore: ${esc(e.message)}</div>`;
+  }
+}
+
+async function aggiungiVoceRubrica() {
+  const testo = $("rub-testo").value.trim();
+  const tipo = $("rub-tipo").value || "ALTRO";
+  if (!testo) return;
+  try {
+    await api("/rubrica", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ testo, tipo }),
+    });
+    $("rub-testo").value = "";
+    await caricaRubrica();
+  } catch (e) {
+    mostraErrore(e.message, "Rubrica");
+  }
+}
+
+async function rimuoviVoceRubrica(testo) {
+  const ok = confirm(
+    `Rimuovere "${testo}" dalla rubrica?\n\n` +
+    "Non sarà più anonimizzato automaticamente in nuove sessioni."
+  );
+  if (!ok) return;
+  try {
+    await api(`/rubrica?testo=${encodeURIComponent(testo)}`, { method: "DELETE" });
+    await caricaRubrica();
+  } catch (e) {
+    mostraErrore(e.message, "Rubrica");
+  }
+}
+
+async function importaRubricaCSV(file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  try {
+    const d = await api("/rubrica/importa", { method: "POST", body: fd });
+    await caricaRubrica();
+    statoAnon.fioco(`Rubrica: ${d.aggiunte} voci aggiunte, ${d.scartate} scartate.`);
+  } catch (e) {
+    mostraErrore(e.message, "Import rubrica");
+  }
+}
+
+function apriRubrica() {
+  popolaTipiRub();
+  caricaRubrica();
+  veloRubrica.hidden = false;
+  veloRubrica.classList.add("aperto");
+  $("btn-rubrica-chiudi").focus();
+}
+function chiudiRubrica() {
+  veloRubrica.classList.remove("aperto");
+  veloRubrica.hidden = true;
+}
+$("btn-rubrica").addEventListener("click", apriRubrica);
+$("btn-rubrica-chiudi").addEventListener("click", chiudiRubrica);
+veloRubrica.addEventListener("click", (ev) => {
+  if (ev.target === veloRubrica) chiudiRubrica();
+});
+$("btn-rub-aggiungi").addEventListener("click", aggiungiVoceRubrica);
+$("rub-testo").addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter") aggiungiVoceRubrica();
+});
+$("btn-rub-importa").addEventListener("click", () => $("rub-file").click());
+$("rub-file").addEventListener("change", (ev) => {
+  const f = ev.target.files && ev.target.files[0];
+  ev.target.value = "";
+  if (f) importaRubricaCSV(f);
+});
+$("rub-elenco").addEventListener("click", (ev) => {
+  const b = ev.target.closest(".b-rimuovi");
+  if (b) rimuoviVoceRubrica(b.dataset.testo);
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && !veloRubrica.hidden) chiudiRubrica();
+});
+
+/* ------------------------------------------------------------ vault view */
+
+const veloVault = $("velo-vault");
+let vaultVociCorrenti = [];
+let vaultValoriVisibili = false;
+
+function disegnaVault() {
+  const el = $("vault-elenco");
+  const bottoneMostra = $("btn-vault-mostra");
+  const totale = vaultVociCorrenti.length;
+  $("vault-conteggio").textContent = totale === 1 ? "1 entità" : `${totale} entità`;
+  bottoneMostra.textContent = vaultValoriVisibili ? "Nascondi valori" : "Mostra valori";
+  bottoneMostra.hidden = totale === 0;
+  if (!totale) {
+    el.innerHTML = `<div class="tabella-vuota">Nessuna entità trattenuta in questa sessione.</div>`;
+    return;
+  }
+  el.innerHTML =
+    "<table><thead><tr>" +
+      "<th>Placeholder</th><th>Tipo</th><th>Valore reale</th>" +
+    "</tr></thead><tbody>" +
+    vaultVociCorrenti.map((v) => {
+      const val = vaultValoriVisibili
+        ? esc(v.valore_reale)
+        : `<span class="attesa">••••••</span>`;
+      return `<tr>` +
+        `<td><span class="segnaposto">${esc(v.placeholder)}</span></td>` +
+        `<td>${esc(etichettaTipo(v.tipo))}</td>` +
+        `<td>${val}</td>` +
+      `</tr>`;
+    }).join("") +
+    "</tbody></table>";
+}
+
+async function caricaVault() {
+  const el = $("vault-elenco");
+  if (!stato.sessione) {
+    vaultVociCorrenti = [];
+    $("vault-sessione-id").textContent = "Nessuna sessione attiva";
+    disegnaVault();
+    return;
+  }
+  $("vault-sessione-id").textContent = `Sessione ${stato.sessione}`;
+  try {
+    const d = await api(`/sessioni/${encodeURIComponent(stato.sessione)}`);
+    vaultVociCorrenti = (d && d.entita) || [];
+    vaultValoriVisibili = false;
+    disegnaVault();
+  } catch (e) {
+    el.innerHTML = `<div class="tabella-vuota">Errore: ${esc(e.message)}</div>`;
+  }
+}
+
+function apriVault() {
+  caricaVault();
+  veloVault.hidden = false;
+  veloVault.classList.add("aperto");
+  $("btn-vault-chiudi").focus();
+}
+function chiudiVault() {
+  veloVault.classList.remove("aperto");
+  veloVault.hidden = true;
+  vaultValoriVisibili = false;
+}
+$("btn-vault").addEventListener("click", apriVault);
+$("btn-vault-chiudi").addEventListener("click", chiudiVault);
+veloVault.addEventListener("click", (ev) => {
+  if (ev.target === veloVault) chiudiVault();
+});
+$("btn-vault-mostra").addEventListener("click", () => {
+  vaultValoriVisibili = !vaultValoriVisibili;
+  disegnaVault();
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && !veloVault.hidden) chiudiVault();
+});
+
+/* ------------------------------------------------------ aggiornamenti */
+
+async function caricaStatoAggiornamento({retry = true} = {}) {
+  try {
+    const d = await api("/aggiornamenti");
+    // Toggle nel dialog Informazioni.
+    if ($("chk-aggiornamenti")) $("chk-aggiornamenti").checked = !!d.check_attivo;
+    if ($("check-nota")) {
+      const ultimo = d.ultimo_check ? new Date(d.ultimo_check).toLocaleString("it-IT") : "mai";
+      $("check-nota").textContent = `Ultimo controllo: ${ultimo}.`;
+    }
+    // Banner discreto se c'è nuova versione.
+    if (d.nuova_versione && d.nuova_versione.versione) {
+      mostraBannerAggiornamento(d.nuova_versione, d.versione_corrente);
+    } else if (retry && d.check_attivo && !d.ultimo_check) {
+      // Il worker in background non ha ancora risposto: riprova fra 2s.
+      setTimeout(() => caricaStatoAggiornamento({retry: false}), 2000);
+    }
+  } catch (_) { /* silente */ }
+}
+
+function mostraBannerAggiornamento(remota, corrente) {
+  const b = $("banner-agg");
+  $("agg-marca").textContent = "Aggiornamento";
+  const note = remota.note ? ` — ${remota.note}` : "";
+  $("agg-testo").textContent =
+    `Versione ${remota.versione} disponibile (attuale: ${corrente}).${note}`;
+  const link = $("agg-link");
+  if (remota.url_download) {
+    link.href = remota.url_download;
+    link.hidden = false;
+  } else {
+    link.hidden = true;
+  }
+  b.hidden = false;
+}
+
+$("agg-chiudi").addEventListener("click", () => { $("banner-agg").hidden = true; });
+
+$("chk-aggiornamenti").addEventListener("change", async (ev) => {
+  const attivo = ev.target.checked;
+  try {
+    await api("/aggiornamenti/imposta", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ attivo }),
+    });
+    // Se disattivato, nasconde il banner esistente.
+    if (!attivo) $("banner-agg").hidden = true;
+    caricaStatoAggiornamento({retry: false});
+  } catch (e) {
+    mostraErrore(e.message, "Impostazioni");
+  }
+});
+
+/* ------------------------------------------------------------------ avvio */
+
+// Esposizione limitata di stato/funzioni per test end-to-end. Non
+// serve alla UI in produzione ma permette a Playwright di simulare
+// scenari (es. residuo aggiunto a mano nel testo in uscita) senza
+// dover ricostruire lo stato via clicks. Non-invasivo, non usato dal
+// resto del codice.
+window.__pb = { stato, verificaResidui, aggiornaPannelli, ETICHETTA_TIPO };
+
+(async function avvio() {
+  await caricaTipi();
+  await caricaSessioni();
+  if (!stato.sessione) await caricaSessioni(nuovoId());
+  disegnaTabella();
+  disegnaSuggerimenti();
+  aggiornaPannelli();
+  caricaStatoAggiornamento();
+  // Ultima cosa, a finestra disegnata: scalda il motore mentre l'utente
+  // legge. Se fallisce non cambia niente — il motore si carica comunque
+  // alla prima anonimizzazione, solo più tardi.
+  api("/precarica", { method: "POST" }).catch(() => {});
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+data/*.db
+
+dist/
+*.dmg
+*.exe
+
+# Uscita delle verifiche: si rigenera con ./verifica_tutto.sh, e la
+# copia che conta — quella della consegna — sta in docs/CONSEGNA.md.
+verifica_tutto_output.txt
+
+# In build/ convivono due cose: le ricette di impacchettamento, che sono
+# codice sorgente, e il prodotto che ne esce (il bundle .app, 1,2 GB, con
+# dentro il modello e una copia dell'interprete) più le cartelle di
+# lavoro che PyInstaller si crea da sé. Stessa regola invertita di
+# benchmark/, per lo stesso motivo: elencare gli artefatti uno per uno
+# significa dimenticarne uno appena cambia il packaging.
+build/**
+!build/*.spec
+!build/*.sh
+!build/*.iss
+
+# In benchmark/ tutto ciò che non è codice deriva dai documenti privati
+# dell'utente: testo estratto via OCR, dump di analisi, output di misura.
+# Elencare i nomi uno per uno ha già mancato un file (Indagine.ocr.txt,
+# testo integrale di un atto giudiziario, rimasto fuori dalle regole).
+# Quindi la regola è invertita: si versiona il codice, e tutto il resto
+# è escluso per definizione — anche i file che non esistono ancora.
+benchmark/**
+!benchmark/**/
+!benchmark/**/*.py
+!benchmark/**/README.md
+!benchmark/**/.gitkeep

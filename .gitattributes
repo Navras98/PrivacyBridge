@@ -1,0 +1,10 @@
+# Normalizza i finali di riga senza riscrivere la storia
+* text=auto
+*.sh text eol=lf
+*.py text eol=lf
+*.bat text eol=crlf
+*.iss text eol=crlf
+*.vbs text eol=crlf
+*.png binary
+*.icns binary
+*.ico binary

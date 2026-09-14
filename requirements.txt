@@ -1,0 +1,26 @@
+fastapi
+uvicorn[standard]
+presidio-analyzer
+presidio-anonymizer
+spacy>=3.7
+transformers>=4.48
+numpy<2
+pdfplumber
+python-docx
+openpyxl        # FASE 3: XLSX
+striprtf        # FASE 3: RTF
+odfpy           # FASE 3: ODT
+extract-msg     # FASE 3: MSG Outlook
+beautifulsoup4  # FASE 3: HTML
+wordfreq        # FASE 2: build dizionario nomi (solo tool di build)
+aiofiles
+pytest
+playwright
+httpx
+python-multipart
+platformdirs
+pywebview
+pypdfium2       # PARTE 2: rasterizzazione pagine PDF per OCR
+pyobjc-framework-Vision; sys_platform == "darwin"   # PARTE 2: OCR nativo macOS
+pyobjc-framework-Quartz; sys_platform == "darwin"
+winsdk; sys_platform == "win32"                     # PARTE 2: OCR nativo Windows (mai provato)
