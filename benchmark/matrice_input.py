@@ -99,11 +99,11 @@ def main() -> int:
     esiti.append(_check("nota a piè di pagina", "Mario Rossi" not in out))
     # Modulo con campi etichettati.
     out, e, _ = _run("Nome: Mario\nCognome: Rossi\nCodice fiscale: "
-                     "RSSMRA85T10A944I\nLuogo di nascita: Assisi\n"
+                     "RSSMRA85T10A944I\nLuogo di nascita: Roma\n"
                      "Data di nascita: 15/05/1975")
     esiti.append(_check("modulo campi etichettati", all(
         x not in out for x in ("Mario", "Rossi", "RSSMRA85T10A944I",
-                               "Assisi", "15/05/1975"))))
+                               "Roma", "15/05/1975"))))
 
     print(">> GRAFIA")
     frase = "ciao sono mario rossi, la mia email è m.rossi@example.it"

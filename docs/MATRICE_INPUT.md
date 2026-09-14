@@ -17,7 +17,7 @@ limite** = funziona con un limite documentato (rimando a BLOCCHI.md).
 | PDF con livello testo | estrazione pdfplumber | OK | `test_carica_pdf`; 4 PDF reali utente |
 | PDF scansionato | OCR nativo (Vision) su tutte le pagine; avviso in UI; se OCR assente → errore esplicito | OK | `test_pdf_scansionato_ocr_estrae_testo`; "Indagine .pdf" reale |
 | PDF misto (pagine scansionate) | OCR solo sulle pagine povere (testo <600 char + immagine >50% area), si tiene il testo più lungo | OK | `test_pdf_misto_solo_pagine_povere_in_ocr`; "Indagine .pdf": 10/25 pagine ri-lette, 23.553→30.252 char |
-| PDF scansione con OCR incorporato buono | si usa il testo incorporato, niente ri-OCR | OK | "Appello 310 c.p.p.": 4.000+ char/pag, 32 entità |
+| PDF scansione con OCR incorporato buono | si usa il testo incorporato, niente ri-OCR | OK | "Atto giudiziario": 4.000+ char/pag, 32 entità |
 | DOCX | estrazione python-docx | OK | `test_carica_docx` |
 | DOC vecchio (binario) | NON supportato: errore chiaro "formato non supportato" con elenco ammessi | OK (fuori perimetro) | `test_estensione_non_supportata`; API 400 |
 | ODT | estrazione odfpy | OK | `test_carica_odt` |

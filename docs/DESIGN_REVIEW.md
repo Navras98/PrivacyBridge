@@ -286,7 +286,7 @@ versione sta dove sta anche la data dell'ultimo controllo.
 
 Nel pannello sinistro si legge
 
-> Ciao sono `Delfo Berretti` , nato ad `Assisi` il `27 marzo 2004` .
+> Ciao sono `Delfo Berretti` , nato a `Roma` il `15 maggio 1975` .
 
 con uno spazio evidente prima della virgola e del punto. Causa: i chip del
 valore reale e del segnaposto avevano `padding: 1px 4px`, e quei 4 px

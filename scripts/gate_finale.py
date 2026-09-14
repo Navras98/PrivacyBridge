@@ -37,7 +37,7 @@ OUT = ROOT / "docs" / "screenshots"
 
 # Testo canonico del briefing 2026-08-01.
 TESTO = (
-    "Ciao sono Delfo Berretti, nato ad Assisi il 27 marzo 2004.\n"
+    "Ciao sono Delfo Berretti, nato a Roma il 15 maggio 1975.\n"
     "IBAN IT60X0542811101000000123456, email d.berretti@studio.it, "
     "cell. 3391234567.\n"
     "Sono con marco, giovanni, maria, luisa e fiorella.\n"

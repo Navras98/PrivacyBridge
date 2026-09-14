@@ -192,8 +192,7 @@ perimetro, categorie spente per scelta, o artefatti dello scanner.
 
 ### A. Separatore non previsto — 3 casi, la causa più netta
 
-Tre numeri di telefono restano in chiaro in `Rossi Andrea -Appello 310
-c.p.p..pdf`, tutti con contesto esplicito:
+Tre numeri di telefono restano in chiaro in `Atto_giudiziario.pdf`, tutti con contesto esplicito:
 
 ```
 075/9115329       ctx: "tel."

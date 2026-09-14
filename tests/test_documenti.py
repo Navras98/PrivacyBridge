@@ -385,7 +385,7 @@ def test_pdf_scansionato_ocr_estrae_testo(tmp_path):
         pytest.skip("OCR nativo non disponibile su questa macchina")
 
     contenuto = (
-        "Il sottoscritto Mario Rossi, nato ad Assisi,\n"
+        "Il sottoscritto Mario Rossi, nato a Roma,\n"
         "codice fiscale RSSMRA85T10A944I,\n"
         "chiede il rilascio del documento."
     )

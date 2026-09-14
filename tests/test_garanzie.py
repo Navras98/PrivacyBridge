@@ -340,7 +340,7 @@ def test_g2_output_ocr_non_corrotto(vault_temp):
     """G2 su testo tipo-OCR (caratteri confusi, spazi anomali): il
     motore non deve corrompere ciò che non sostituisce."""
     testo = ("VERBALE Dl SEQUESTRO\n"           # "Dl" = OCR di "DI"
-             "ll sottoscritto Mario Rossi , nato ad Assisi ,\n"
+             "ll sottoscritto Mario Rossi , nato a Roma ,\n"
              "c0dice fiscale RSSMRA80A01H501U dichiara quanto segue .")
     anon, _ = anonimizza(testo, "g2o", db_path=vault_temp)
     restored, _ = deanonimizza(anon, "g2o", db_path=vault_temp)

@@ -697,8 +697,8 @@ documenti + 13 UI). Zero regressioni.
 
 ### Categoria LUOGO_NASCITA (post-follow-up utente)
 
-Osservazione dell'utente: sul caso "nato ad assisi il 27 marzo del
-2004", DATA_NASCITA cattura la data ma "assisi" (luogo di nascita)
+Osservazione dell'utente: sul caso "nato a roma il 15 maggio del
+1975", DATA_NASCITA cattura la data ma "assisi" (luogo di nascita)
 resta in chiaro perché LUOGO generico è spento. Fix simmetrico a
 DATA_NASCITA:
 
@@ -1680,7 +1680,7 @@ Vedi `verifica_tutto_output.txt` per l'output completo di
 ### PARTE 2 — OCR nativo (in corso)
 
 - Diagnosi grezza dei PDF utente (pdfplumber, char/pagina, immagini):
-  * Appello 310 c.p.p.: 11 pagine tutte scansione+OCR incorporato
+  * Atto giudiziario: 11 pagine tutte scansione+OCR incorporato
     buono (4.000+ char/pag) → estrae 47.772 char, si anonimizza (32
     sostituzioni, inclusi 2 numeri R.G.).
   * Indagine .pdf: 25 pagine interamente scansionate, OCR incorporato
@@ -3141,8 +3141,8 @@ primo grave (fughe semantiche), il secondo di ergonomia.
 
 ### 1. PERSONA che ingloba parole di contesto anagrafico
 
-**Difetto.** Su `"Ciao sono Matteo Rossi nato ad Assisi il 27 marzo
-2004"` il motore riconosceva `"Matteo Rossi nato"` come PERSONA. La
+**Difetto.** Su `"Ciao sono Matteo Rossi nato a Roma il 15 maggio
+1975"` il motore riconosceva `"Matteo Rossi nato"` come PERSONA. La
 parola *nato* spariva dall'uscita anonimizzata (`"«PERSONA_1» ad
 «LUOGO_NASCITA_1»…"`), e — cosa peggiore — *nato* è **l'indicatore di
 contesto** che il recognizer LUOGO_NASCITA usa per innescarsi su
