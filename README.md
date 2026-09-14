@@ -28,6 +28,29 @@ Non chiudere l'app tra il punto 2 e il 4: la corrispondenza etichette ↔ valori
 
 *Schermate con dati di esempio fittizi (Mario Rossi, IBAN e contatti inventati).*
 
+## Provala in 5 minuti
+
+**Via A — da sorgente (funziona oggi, macOS e Windows).** Requisiti: Python 3.11,
+~2 GB liberi per i modelli neurali (scaricati al primo avvio, poi tutto offline).
+
+```bash
+git clone https://github.com/Navras98/PrivacyBridge.git
+cd PrivacyBridge
+python3 -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+python -m spacy download it_core_news_sm
+python src/avvio.py
+```
+
+Al primo avvio scarica i pesi del modello PII da Hugging Face (`rizzo-pii-0.3B`,
+MIT — vedi `NOTICE.txt`); dal secondo avvio funziona anche senza connessione.
+Per verificare che tutto funzioni: `./verifica_tutto.sh`.
+
+**Via B — app macOS pronta.** Il `PrivacyBridge.dmg` (2,3 GB, trascina in
+Applicazioni) non può stare su GitHub — il limite è 100 MB per file nel repo
+e 2 GB per allegato di Release — quindi il download arriverà su link esterno
+(Google Drive): lo aggiungo qui appena pronto.
+
 ## Caratteristiche
 
 - **100% locale** — nessuna telemetria, nessun cloud. L'unica connessione (facoltativa e
@@ -57,18 +80,6 @@ Onestà prima di tutto — il capitolo completo con i numeri misurati è in
 - **Italiano.** Su altre lingue e nomi stranieri rari riconosce molto meno.
 - **Vault non cifrato.** I valori veri restano in un archivio locale protetto dai permessi
   (0600), non cifrato: tenere attiva la cifratura disco (FileVault / BitLocker).
-
-## Installazione da sorgente
-
-```bash
-python3 -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-python -m spacy download it_core_news_sm           # modello italiano spaCy
-python src/avvio.py
-```
-
-I pesi del modello neurale PII (`rizzo-pii-0.3B`, MIT — vedi `NOTICE.txt`) vengono scaricati
-al primo avvio da Hugging Face.
 
 ## Test
 
