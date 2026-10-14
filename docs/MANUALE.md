@@ -154,9 +154,10 @@ Vedi [BLOCCHI.md](BLOCCHI.md) per l'elenco completo. In breve:
 - Windows non è stato ancora testato su una macchina reale (il
   codice è portabile, lo script Inno Setup pronto; vedi
   `BLOCCHI.md § 11`).
-- Il vault **non è cifrato**: è protetto dai permessi del
-  filesystem (0600) e dalla cifratura del disco (FileVault,
-  BitLocker). Chi copia il disco da spento legge i valori.
+- Il vault **è cifrato at-rest** (Fernet, chiave nel Portachiavi di sistema)
+  con permessi 0600 del filesystem. Resta consigliata la cifratura del disco
+  (FileVault, BitLocker). Chi copia il disco da spento senza la chiave
+  legge solo dati cifrati.
 
 ## Struttura del progetto
 

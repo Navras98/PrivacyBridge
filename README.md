@@ -5,6 +5,8 @@
 [![Platform](https://img.shields.io/badge/platform-macOS_%7C_Windows-lightgrey.svg)](docs/MANUALE.md)
 [![Local-first](https://img.shields.io/badge/data-local--only-orange.svg)](docs/MANUALE.md#cosa-non-fa)
 
+English version: [README.en.md](README.en.md)
+
 **Anonimizzazione locale e reversibile di testi e documenti italiani.**
 Sostituisce nomi, IBAN, codici fiscali e recapiti con segnaposto, così il testo può andare
 a un assistente AI cloud — e al ritorno i valori originali vengono ripristinati **byte per byte**.
@@ -78,8 +80,9 @@ Onestà prima di tutto — il capitolo completo con i numeri misurati è in
 - **Scansioni (OCR).** Su PDF fotografati il rilevamento è meno affidabile — l'app avvisa
   e la tabella va controllata riga per riga.
 - **Italiano.** Su altre lingue e nomi stranieri rari riconosce molto meno.
-- **Vault non cifrato.** I valori veri restano in un archivio locale protetto dai permessi
-  (0600), non cifrato: tenere attiva la cifratura disco (FileVault / BitLocker).
+- **Vault cifrato.** I valori veri restano cifrati at-rest (Fernet, chiave nel
+  Portachiavi di sistema) con permessi 0600: tenere attiva la cifratura disco
+  (FileVault / BitLocker).
 
 ## Test
 
@@ -100,6 +103,12 @@ Onestà prima di tutto — il capitolo completo con i numeri misurati è in
   non ce n'è uno precompilato.
 
 Guida utente completa: [docs/MANUALE.md](docs/MANUALE.md) · istruzioni non tecniche: `PrivacyBridge-App/LEGGIMI.txt` (fuori repo).
+
+## Contatti
+
+Andrea Sforna — andrea.sforna@gmail.com — https://github.com/Navras98
+
+Segnalazioni, bug e idee sono benvenuti come issue GitHub.
 
 ## Struttura
 
