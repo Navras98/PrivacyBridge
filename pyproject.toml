@@ -1,0 +1,37 @@
+[tool.pytest.ini_options]
+# Il codice dell'applicazione sta in src/, i test fuori. Senza questo
+# `from backend...` funzionerebbe solo lanciando pytest dalla cartella
+# giusta, e smetterebbe di funzionare da qualunque altra.
+pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+# Non è codice del progetto: venv sono le dipendenze, dist è generata da
+# PyInstaller, build/ contiene i file di packaging e il bundle costruito
+# a mano (dentro cui c'è una copia dell'interprete).
+exclude = [
+    "venv",
+    "dist",
+    "build",
+]
+
+[tool.ruff.lint]
+# BLE001 vieta `except Exception`. Qui i 26 punti che lo fanno sono tutti
+# confini verso qualcosa che non controlliamo — torch, il motore OCR di
+# sistema, un .msg di Outlook, un PDF malformato, la rete — e ognuno
+# converte il guasto in un esito dichiarato: HTTP 500, `None`, insieme
+# vuoto, warning nel log. Elencare i tipi di eccezione di torch non è
+# possibile, e restringere significherebbe far morire la finestra su un
+# guasto previsto.
+#
+# Il difetto vero che BLE001 vuole evitare è il guasto ingoiato in
+# silenzio, ed è S110 (`except` largo con corpo `pass`) a coprirlo: resta
+# acceso ed è a zero. Quello è il vincolo che regge, non questo.
+ignore = ["BLE001"]
+
+[tool.ruff.lint.flake8-bugbear]
+# In FastAPI la chiamata NEL default è la sintassi prevista per dichiarare
+# un upload: `file: UploadFile = File(...)`. Non è il difetto che B008
+# cerca (un default mutabile condiviso fra chiamate).
+extend-immutable-calls = ["fastapi.File", "fastapi.Depends", "fastapi.Query"]
